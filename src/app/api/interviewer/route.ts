@@ -1,7 +1,15 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenAI } from '@google/genai';
+import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || 'MISSING_KEY' });
+const bedrockClient = new BedrockRuntimeClient({
+  region: process.env.AWS_REGION || 'us-east-1',
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+  },
+});
+
+const MODEL_ID = process.env.AWS_MODEL_NAME || 'amazon.nova-lite-v1:0';
 
 const INTERVIEW_SYSTEM_PROMPT = `
 You are a professional AI interviewer conducting a structured technical interview.
@@ -41,8 +49,8 @@ export async function POST(req: Request) {
     const { action, questionBank, transcript } = await req.json();
 
     if (action === 'ask_next') {
-      if (!process.env.GEMINI_API_KEY) {
-        return NextResponse.json({ response: "API Key missing. Cannot proceed with AI.", isCompleted: true });
+      if (!process.env.AWS_ACCESS_KEY_ID) {
+        return NextResponse.json({ response: "AWS credentials missing. Cannot proceed with AI.", isCompleted: true });
       }
 
       const questionsBlock = questionBank.map((q: any, i: number) => `${i + 1}. ${q.question}`).join('\n');
@@ -63,15 +71,37 @@ ${chatHistory}
 Based on the instructions, what is the AI interviewer's next response? Return ONLY the response text.
 `;
 
-      const response = await ai.models.generateContent({
-        model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
-        contents: prompt,
+      const payload = {
+        schemaVersion: "messages-v1",
+        messages: [
+          {
+            role: "user",
+            content: [{ text: prompt }],
+          },
+        ],
+        inferenceConfig: {
+          maxTokens: 1024,
+          temperature: 0.7,
+        },
+      };
+
+      const command = new InvokeModelCommand({
+        modelId: MODEL_ID,
+        contentType: 'application/json',
+        accept: 'application/json',
+        body: JSON.stringify(payload),
       });
 
-      const nextResponse = response.text?.trim() || "I apologize, could you repeat that?";
+      const response = await bedrockClient.send(command);
+      const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+      const nextResponse = responseBody.output?.message?.content?.[0]?.text?.trim() || "I apologize, could you repeat that?";
       const isCompleted = nextResponse.includes('[INTERVIEW_ENDED]');
       
-      const cleanResponse = nextResponse.replace('\\[INTERVIEW_ENDED\\]', '').replace('[INTERVIEW_ENDED]', '').trim();
+      let cleanResponse = nextResponse.replace('\\[INTERVIEW_ENDED\\]', '').replace('[INTERVIEW_ENDED]', '').trim();
+      
+      if (cleanResponse.startsWith('AI:')) {
+        cleanResponse = cleanResponse.substring(3).trim();
+      }
 
       return NextResponse.json({ 
         response: cleanResponse, 
