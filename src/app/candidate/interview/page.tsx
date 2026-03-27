@@ -149,8 +149,7 @@ export default function InterviewRoom() {
       recognitionRef.current.stop();
     }
 
-    const qObj = questionIndex.current === -1 ? null : interview.question_bank[questionIndex.current];
-    const currentQ = qObj ? (qObj.question || qObj) : "Introduction";
+    const currentQ = questionIndex.current === -1 ? "Introduction" : interview.question_bank[questionIndex.current].question;
     const finalAnswer = currentAnswer.trim() || '(No response audible)';
     
     candidateAnswers.current.push({ q: currentQ, a: finalAnswer });

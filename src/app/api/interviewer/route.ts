@@ -13,10 +13,9 @@ export async function POST(req: Request) {
       }
 
       const isFirstQuestion = currentQuestionIndex === -1;
-      const qObj = isFirstQuestion ? null : questionBank[currentQuestionIndex];
       const targetQuestion = isFirstQuestion 
         ? "Hello and welcome! Could you please briefly introduce yourself and share a bit about your background?" 
-        : (qObj?.question || qObj);
+        : questionBank[currentQuestionIndex].question;
 
       const responseText = isFirstQuestion 
         ? targetQuestion 

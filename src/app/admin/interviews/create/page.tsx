@@ -44,11 +44,10 @@ export default function CreateTest() {
     reader.readAsArrayBuffer(file);
   };
 
-  const handleQuestionBankUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleQuestionUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setError('');
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
@@ -57,25 +56,22 @@ export default function CreateTest() {
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
         const json = XLSX.utils.sheet_to_json(worksheet) as any[];
-        
+
+        // Assume Excel has headers: Question, Answer
         const parsed = json.map(row => ({
           question: row.Question || row.question || '',
           answer: row.Answer || row.answer || ''
-        })).filter(q => q.question);
-        
+        })).filter(q => q.question.trim());
+
         if (parsed.length > 0) {
-           if (questions.length === 1 && !questions[0].question) {
-             setQuestions(parsed);
-           } else {
-             setQuestions([...questions, ...parsed]);
-           }
-        } else {
-          setError('No valid questions found. Ensure Excel has Question and Answer columns.');
+          if (questions.length === 1 && !questions[0].question) {
+            setQuestions(parsed);
+          } else {
+            setQuestions([...questions, ...parsed]);
+          }
         }
       } catch (err) {
         setError('Failed to parse Excel file. Ensure it has Question and Answer columns.');
-      } finally {
-        e.target.value = ''; // Reset input
       }
     };
     reader.readAsArrayBuffer(file);
@@ -83,7 +79,7 @@ export default function CreateTest() {
 
   const handleSave = async () => {
     if (!title) return setError('Title is required');
-    if (questions.some(q => !q.question.trim() || !q.answer.trim())) return setError('All questions and answers must be filled');
+    if (questions.some(q => !q.question.trim())) return setError('All questions must be filled');
     if (candidates.length === 0) return setError('At least one candidate is required from Excel');
     
     setLoading(true);
@@ -171,25 +167,26 @@ export default function CreateTest() {
                 <label className="cursor-pointer bg-black/50 hover:bg-black border border-white/10 hover:border-blue-500 px-4 py-2 rounded-xl flex items-center gap-2 transition-colors shrink-0">
                   <FileSpreadsheet className="text-blue-400" size={16} />
                   <span className="font-medium text-sm text-slate-300">Upload Excel</span>
-                  <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleQuestionBankUpload} />
+                  <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleQuestionUpload} />
                 </label>
 
                 <button 
                   onClick={() => setQuestions([...questions, {question: '', answer: ''}])}
-                  className="text-sm bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 px-4 py-2 rounded-xl transition-colors flex items-center gap-2 disabled:opacity-50"
+                  className="text-sm bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 px-4 py-2 rounded-xl transition-colors flex items-center gap-2"
                 >
                   <Plus size={16} /> Add 
                 </button>
               </div>
             </div>
             
+            <p className="text-sm text-slate-400 mb-4">Upload an Excel file (.xlsx) with columns: Question, Answer.</p>
             <div className="space-y-4">
               {questions.map((q, i) => (
                 <div key={i} className="flex items-start gap-4">
                   <div className="w-8 h-10 mt-1 flex items-center justify-center shrink-0 bg-white/5 rounded-lg text-slate-500 font-bold text-sm">
                     {i + 1}
                   </div>
-                  <div className="flex-1 space-y-3">
+                  <div className="flex-1 space-y-2">
                     <textarea
                       value={q.question}
                       onChange={(e) => {
@@ -209,7 +206,7 @@ export default function CreateTest() {
                         setQuestions(newQ);
                       }}
                       rows={2}
-                      className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-green-500 transition-colors"
+                      className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-slate-300 focus:outline-none focus:border-green-500 transition-colors"
                       placeholder="Enter expected answer..."
                     />
                   </div>
