@@ -20,6 +20,7 @@ export default function InterviewRoom() {
   const [isListening, setIsListening] = useState(false);
   const [currentAnswer, setCurrentAnswer] = useState('');
   const [transcript, setTranscript] = useState<{speaker: 'AI' | 'Candidate', text: string}[]>([]);
+  const transcriptRef = useRef<{speaker: 'AI' | 'Candidate', text: string}[]>([]);
   const [savingStatus, setSavingStatus] = useState('');
   
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -104,7 +105,7 @@ export default function InterviewRoom() {
     });
   };
 
-  const askNextQuestion = async () => {
+  const askNextQuestion = async (currentTranscript = transcriptRef.current) => {
     try {
       const res = await fetch('/api/interviewer', {
         method: 'POST',
@@ -112,7 +113,7 @@ export default function InterviewRoom() {
         body: JSON.stringify({
           action: 'ask_next',
           questionBank: interview.question_bank,
-          currentQuestionIndex: questionIndex.current
+          transcript: currentTranscript
         })
       });
       
@@ -120,13 +121,21 @@ export default function InterviewRoom() {
       
       if (data.isCompleted) {
         setIsCompleted(true);
-        setTranscript(prev => [...prev, { speaker: 'AI', text: data.response }]);
+        const finalMsg = { speaker: 'AI' as 'AI', text: data.response };
+        transcriptRef.current.push(finalMsg);
+        setTranscript([...transcriptRef.current]);
         await speak(data.response);
         await handleEndInterview();
         return;
       }
 
-      setTranscript(prev => [...prev, { speaker: 'AI', text: data.response }]);
+      const aiMsg = { speaker: 'AI' as 'AI', text: data.response };
+      transcriptRef.current.push(aiMsg);
+      setTranscript([...transcriptRef.current]);
+      
+      // Update candidateAnswers' latest question to whatever the AI asked
+      candidateAnswers.current.push({ q: data.response, a: '' });
+
       await speak(data.response);
       
       // Reset text and start listening purely for the candidate's answer
@@ -149,14 +158,18 @@ export default function InterviewRoom() {
       recognitionRef.current.stop();
     }
 
-    const currentQ = questionIndex.current === -1 ? "Introduction" : interview.question_bank[questionIndex.current].question;
     const finalAnswer = currentAnswer.trim() || '(No response audible)';
     
-    candidateAnswers.current.push({ q: currentQ, a: finalAnswer });
-    setTranscript(prev => [...prev, { speaker: 'Candidate', text: finalAnswer }]);
+    // Fill the answer for the last question the AI asked
+    if (candidateAnswers.current.length > 0) {
+      candidateAnswers.current[candidateAnswers.current.length - 1].a = finalAnswer;
+    }
     
-    questionIndex.current++;
-    await askNextQuestion();
+    const candidateMsg = { speaker: 'Candidate' as 'Candidate', text: finalAnswer };
+    transcriptRef.current.push(candidateMsg);
+    setTranscript([...transcriptRef.current]);
+    
+    await askNextQuestion(transcriptRef.current);
   };
 
   const startInterviewProcess = async () => {
@@ -181,7 +194,7 @@ export default function InterviewRoom() {
     }
     
     // Evaluate via pure JSON Eval endpoint
-    let evaluationResult: { score?: number; feedback?: string } = {};
+    let evaluationResult: { score?: number; feedback?: string; aspects?: any } = {};
     try {
       setSavingStatus('AI is evaluating your responses...');
       const res = await fetch('/api/evaluate', {
@@ -189,7 +202,7 @@ export default function InterviewRoom() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           questionBank: interview.question_bank,
-          previousContext: candidateAnswers.current
+          previousContext: transcriptRef.current
         })
       });
       const data = await res.json();
@@ -241,7 +254,7 @@ export default function InterviewRoom() {
         candidate_id: candidate.id,
         interview_id: interview.id,
         evaluation: evaluationResult,
-        transcript_data: { full_transcript: candidateAnswers.current },
+        transcript_data: { full_transcript: candidateAnswers.current.filter((item) => item.a !== '') },
         video_url: finalVideoUrl || null
       }]);
       

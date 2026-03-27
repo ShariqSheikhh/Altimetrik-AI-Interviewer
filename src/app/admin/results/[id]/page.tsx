@@ -132,9 +132,55 @@ export default function ResultDetails() {
               <h3 className="font-semibold flex items-center gap-2 mb-6">
                 <ShieldAlert size={18} className="text-blue-400" /> Evaluator Feedback
               </h3>
-              <div className="prose prose-invert prose-sm">
+              <div className={`prose prose-invert prose-sm ${result.evaluation?.aspects ? 'mb-6 pb-6 border-b border-white/10' : ''}`}>
                 {result.evaluation?.feedback || 'No detailed feedback provided by the AI.'}
               </div>
+
+              {result.evaluation?.aspects && (
+                <div className="space-y-4">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4">Detailed Criteria</h4>
+                  
+                  {result.evaluation.aspects.communication && (
+                    <div className="bg-black/40 p-4 rounded-2xl border border-white/5">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="font-semibold text-blue-400 text-sm">Communication Clarity</span>
+                        <span className="text-xs font-bold bg-blue-500/20 text-blue-300 px-2 py-1 rounded">{result.evaluation.aspects.communication.score}/25</span>
+                      </div>
+                      <p className="text-sm text-slate-300 leading-relaxed">{result.evaluation.aspects.communication.feedback}</p>
+                    </div>
+                  )}
+
+                  {result.evaluation.aspects.relevance && (
+                    <div className="bg-black/40 p-4 rounded-2xl border border-white/5">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="font-semibold text-green-400 text-sm">Relevance & Depth</span>
+                        <span className="text-xs font-bold bg-green-500/20 text-green-300 px-2 py-1 rounded">{result.evaluation.aspects.relevance.score}/25</span>
+                      </div>
+                      <p className="text-sm text-slate-300 leading-relaxed">{result.evaluation.aspects.relevance.feedback}</p>
+                    </div>
+                  )}
+
+                  {result.evaluation.aspects.problem_solving && (
+                    <div className="bg-black/40 p-4 rounded-2xl border border-white/5">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="font-semibold text-purple-400 text-sm">Problem-Solving & Critical Thinking</span>
+                        <span className="text-xs font-bold bg-purple-500/20 text-purple-300 px-2 py-1 rounded">{result.evaluation.aspects.problem_solving.score}/25</span>
+                      </div>
+                      <p className="text-sm text-slate-300 leading-relaxed">{result.evaluation.aspects.problem_solving.feedback}</p>
+                    </div>
+                  )}
+
+                  {result.evaluation.aspects.specificity && (
+                    <div className="bg-black/40 p-4 rounded-2xl border border-white/5">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="font-semibold text-yellow-400 text-sm">Specificity & Use of Examples</span>
+                        <span className="text-xs font-bold bg-yellow-500/20 text-yellow-300 px-2 py-1 rounded">{result.evaluation.aspects.specificity.score}/25</span>
+                      </div>
+                      <p className="text-sm text-slate-300 leading-relaxed">{result.evaluation.aspects.specificity.feedback}</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Candidate Info */}

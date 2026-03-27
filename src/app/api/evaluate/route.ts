@@ -15,7 +15,7 @@ export async function POST(req: Request) {
     }
 
     const prompt = `
-      You are an expert AI Interview Evaluator.
+      You are an expert Interview Evaluator.
       Here is the candidate's interview transcript.
       
       Questions they were supposed to be asked: ${JSON.stringify(questionBank)}
@@ -23,12 +23,22 @@ export async function POST(req: Request) {
       Actual Conversation / Candidate's Answers:
       ${JSON.stringify(previousContext, null, 2)}
       
-      Please meticulously evaluate the candidate's performance. Consider their technical accuracy, communication skills, and depth of knowledge.
+      Please meticulously evaluate the candidate's performance based on the following 4 aspects:
+      1. Communication Clarity (25 points): Logical flow, sentence structure, and ability to convey ideas without ambiguity or contradiction.
+      2. Relevance & Depth of Response (25 points): How directly the answer addresses the question, with substantive insight rather than surface-level filler.
+      3. Problem-Solving & Critical Thinking (25 points): Reasoning through scenarios, weighing trade-offs, and arriving at well-justified conclusions.
+      4. Specificity & Use of Examples (25 points): Backing claims with concrete examples, data, or past experiences rather than vague generalities.
       
-      You MUST return your evaluation strictly as a JSON object matching this schema, without any markdown formatting wrappers or extra text:
+      You MUST return your evaluation strictly as a JSON object matching this exact schema, without any markdown formatting wrappers or extra text:
       {
-        "score": <number from 0 to 100>,
-        "feedback": "<detailed text feedback explaining the score and summarizing the performance>"
+        "score": <total number from 0 to 100>,
+        "feedback": "<detailed overall text feedback explaining the score and summarizing the performance>",
+        "aspects": {
+          "communication": { "score": <number 0-25>, "feedback": "<reasoning>" },
+          "relevance": { "score": <number 0-25>, "feedback": "<reasoning>" },
+          "problem_solving": { "score": <number 0-25>, "feedback": "<reasoning>" },
+          "specificity": { "score": <number 0-25>, "feedback": "<reasoning>" }
+        }
       }
     `;
     
