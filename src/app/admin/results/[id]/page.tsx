@@ -82,10 +82,13 @@ export default function ResultDetails() {
                 <Video size={18} className="text-blue-400" /> Session Recording
               </div>
               <div className="aspect-video bg-black relative flex items-center justify-center">
-                {result.video_url === 'mock_video_playback_feature_coming_soon.mp4' ? (
+                {result.video_url === 'mock_video_playback_feature_coming_soon.mp4' || !result.video_url ? (
                   <div className="text-center text-slate-500 flex flex-col items-center">
-                    <PlayCircle size={48} className="mb-4 opacity-50" />
-                    <p>Video playback is marked for coming soon in MVP.</p>
+                    <ShieldAlert size={48} className="mb-4 opacity-50 text-red-400" />
+                    <p className="font-semibold text-white">Video Recording Not Found</p>
+                    <p className="text-sm mt-2 max-w-sm">
+                      The video failed to upload. Please ensure you have created a public Storage Bucket named <code className="bg-black/50 px-1 rounded text-blue-400 border border-white/10">videos</code> in Supabase and added an INSERT policy for anon users.
+                    </p>
                   </div>
                 ) : (
                   <video src={result.video_url} controls className="w-full h-full" />
