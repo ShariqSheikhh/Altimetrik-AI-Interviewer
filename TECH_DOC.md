@@ -1,6 +1,5 @@
 # AI Interviewer - Technical Documentation
 
-## 🚀 Overview
 The AI Interviewer is a modern web application designed to conduct fully automated, conversational technical interviews using Google Gemini AI, integrated with real-time speech processing and video recording.
 
 ---
@@ -23,7 +22,7 @@ The AI Interviewer is a modern web application designed to conduct fully automat
 
 ---
 
-## 🎙 Speech Systems
+## Speech Systems
 
 The project uses native browser APIs for speech to ensure low latency and zero additional costs.
 
@@ -51,7 +50,7 @@ The project uses native browser APIs for speech to ensure low latency and zero a
 
 ---
 
-## 🧠 Core Workflows
+## Core Workflows
 
 ### AI Interviewer API (`/api/interviewer`)
 The interviewer operates as a **stateless agent**. The entire conversation history and current step (Greeting, Introduction, Question Index) are passed back and forth between the client and the Gemini API in a `state` object.
