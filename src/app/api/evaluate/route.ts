@@ -18,7 +18,7 @@ export async function POST(req: Request) {
       You are an expert AI Interview Evaluator.
       Here is the candidate's interview transcript.
       
-      Questions they were supposed to be asked: ${JSON.stringify(questionBank)}
+      Questions they were supposed to be asked (and expected answers): ${JSON.stringify(questionBank)}
       
       Actual Conversation / Candidate's Answers:
       ${JSON.stringify(previousContext, null, 2)}

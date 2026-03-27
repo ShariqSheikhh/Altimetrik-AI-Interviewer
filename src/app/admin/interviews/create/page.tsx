@@ -10,10 +10,9 @@ import * as XLSX from 'xlsx';
 export default function CreateTest() {
   const router = useRouter();
   const [title, setTitle] = useState('');
-  const [questions, setQuestions] = useState<string[]>(['']);
+  const [questions, setQuestions] = useState<{question: string, answer: string}[]>([{question: '', answer: ''}]);
   const [candidates, setCandidates] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [extracting, setExtracting] = useState(false);
   const [error, setError] = useState('');
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -45,61 +44,46 @@ export default function CreateTest() {
     reader.readAsArrayBuffer(file);
   };
 
-  const handleQuestionUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleQuestionBankUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setExtracting(true);
     setError('');
-
-    try {
-      // Convert file to Base64
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = async () => {
-        try {
-          const res = await fetch('/api/extract-questions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              fileName: file.name,
-              mimeType: file.type || 'application/pdf',
-              base64Data: reader.result
-            })
-          });
-          const data = await res.json();
-          if (data.error) throw new Error(data.error);
-          
-          if (data.questions && Array.isArray(data.questions)) {
-            const newQ = data.questions.filter((q: string) => q.trim().length > 0);
-            if (newQ.length > 0) {
-               if (questions.length === 1 && !questions[0]) {
-                 setQuestions(newQ);
-               } else {
-                 setQuestions([...questions, ...newQ]);
-               }
-            }
-          }
-        } catch (err: any) {
-          setError(err.message || 'Failed to extract questions');
-        } finally {
-          setExtracting(false);
-          e.target.value = ''; // Reset input
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = new Uint8Array(event.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const json = XLSX.utils.sheet_to_json(worksheet) as any[];
+        
+        const parsed = json.map(row => ({
+          question: row.Question || row.question || '',
+          answer: row.Answer || row.answer || ''
+        })).filter(q => q.question);
+        
+        if (parsed.length > 0) {
+           if (questions.length === 1 && !questions[0].question) {
+             setQuestions(parsed);
+           } else {
+             setQuestions([...questions, ...parsed]);
+           }
+        } else {
+          setError('No valid questions found. Ensure Excel has Question and Answer columns.');
         }
-      };
-      reader.onerror = () => {
-        setError('Failed to read document');
-        setExtracting(false);
-      };
-    } catch (err) {
-      setError('An error occurred during upload.');
-      setExtracting(false);
-    }
+      } catch (err) {
+        setError('Failed to parse Excel file. Ensure it has Question and Answer columns.');
+      } finally {
+        e.target.value = ''; // Reset input
+      }
+    };
+    reader.readAsArrayBuffer(file);
   };
 
   const handleSave = async () => {
     if (!title) return setError('Title is required');
-    if (questions.some(q => !q.trim())) return setError('All questions must be filled');
+    if (questions.some(q => !q.question.trim() || !q.answer.trim())) return setError('All questions and answers must be filled');
     if (candidates.length === 0) return setError('At least one candidate is required from Excel');
     
     setLoading(true);
@@ -185,15 +169,14 @@ export default function CreateTest() {
               
               <div className="flex items-center gap-3">
                 <label className="cursor-pointer bg-black/50 hover:bg-black border border-white/10 hover:border-blue-500 px-4 py-2 rounded-xl flex items-center gap-2 transition-colors shrink-0">
-                  {extracting ? <Loader2 className="animate-spin text-blue-400" size={16} /> : <Upload className="text-blue-400" size={16} />}
-                  <span className="font-medium text-sm text-slate-300">Extract via AI</span>
-                  <input type="file" accept=".pdf,.txt,.csv,.docx" className="hidden" onChange={handleQuestionUpload} disabled={extracting} />
+                  <FileSpreadsheet className="text-blue-400" size={16} />
+                  <span className="font-medium text-sm text-slate-300">Upload Excel</span>
+                  <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleQuestionBankUpload} />
                 </label>
 
                 <button 
-                  onClick={() => setQuestions([...questions, ''])}
+                  onClick={() => setQuestions([...questions, {question: '', answer: ''}])}
                   className="text-sm bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 px-4 py-2 rounded-xl transition-colors flex items-center gap-2 disabled:opacity-50"
-                  disabled={extracting}
                 >
                   <Plus size={16} /> Add 
                 </button>
@@ -206,17 +189,30 @@ export default function CreateTest() {
                   <div className="w-8 h-10 mt-1 flex items-center justify-center shrink-0 bg-white/5 rounded-lg text-slate-500 font-bold text-sm">
                     {i + 1}
                   </div>
-                  <textarea
-                    value={q}
-                    onChange={(e) => {
-                      const newQ = [...questions];
-                      newQ[i] = e.target.value;
-                      setQuestions(newQ);
-                    }}
-                    rows={2}
-                    className="flex-1 bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition-colors"
-                    placeholder="Enter interview question..."
-                  />
+                  <div className="flex-1 space-y-3">
+                    <textarea
+                      value={q.question}
+                      onChange={(e) => {
+                        const newQ = [...questions];
+                        newQ[i] = { ...newQ[i], question: e.target.value };
+                        setQuestions(newQ);
+                      }}
+                      rows={2}
+                      className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition-colors"
+                      placeholder="Enter interview question..."
+                    />
+                    <textarea
+                      value={q.answer}
+                      onChange={(e) => {
+                        const newQ = [...questions];
+                        newQ[i] = { ...newQ[i], answer: e.target.value };
+                        setQuestions(newQ);
+                      }}
+                      rows={2}
+                      className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-green-500 transition-colors"
+                      placeholder="Enter expected answer..."
+                    />
+                  </div>
                   {questions.length > 1 && (
                     <button 
                       onClick={() => setQuestions(questions.filter((_, idx) => idx !== i))}
