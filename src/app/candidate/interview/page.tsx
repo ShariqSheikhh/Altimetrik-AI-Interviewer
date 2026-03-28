@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { Mic, MicOff, Video, Play, ShieldCheck } from 'lucide-react';
+import { Mic, MicOff, Video, Play, ShieldCheck, BookOpen, CheckCircle2, ArrowRight, Mail, AlertTriangle } from 'lucide-react';
 
 export default function InterviewRoom() {
   const router = useRouter();
@@ -13,7 +13,9 @@ export default function InterviewRoom() {
   const [stream, setStream] = useState<MediaStream | null>(null);
 
   const [isStarted, setIsStarted] = useState(false);
+  const [showInstructions, setShowInstructions] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
+  const [supportEmail, setSupportEmail] = useState('');
   const [isUploadComplete, setIsUploadComplete] = useState(
     () => typeof window !== 'undefined' && sessionStorage.getItem('interview_done') === 'true'
   );
@@ -38,6 +40,14 @@ export default function InterviewRoom() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [transcript, currentAnswer]);
+
+  // Fetch support email from server-side API
+  useEffect(() => {
+    fetch('/api/support-email')
+      .then(r => r.json())
+      .then(d => { if (d.email) setSupportEmail(d.email); })
+      .catch(() => { });
+  }, []);
 
   useEffect(() => {
     const cid = localStorage.getItem('candidate_id');
@@ -213,6 +223,16 @@ export default function InterviewRoom() {
     }
   };
 
+  // ── Client-side output sanitization (defense-in-depth) ──────────
+  const sanitizeAIOutput = (text: string): string => {
+    return text
+      .replace(/\[INTERVIEW_ENDED\]/g, '')
+      .replace(/^AI:\s*/i, '')
+      .replace(/System\s*Instructions?:[\s\S]{0,200}/gi, '')
+      .replace(/\[Interview\s*Questions[\s\S]{0,50}\]/gi, '')
+      .trim();
+  };
+
   const askNextQuestion = async (currentTranscript = transcriptRef.current) => {
     try {
       const res = await fetch('/api/interviewer', {
@@ -229,22 +249,24 @@ export default function InterviewRoom() {
 
       if (data.isCompleted) {
         setIsCompleted(true);
-        const finalMsg = { speaker: 'AI' as 'AI', text: data.response };
+        const cleanedResponse = sanitizeAIOutput(data.response);
+        const finalMsg = { speaker: 'AI' as 'AI', text: cleanedResponse };
         transcriptRef.current.push(finalMsg);
         setTranscript([...transcriptRef.current]);
-        await speak(data.response);
+        await speak(cleanedResponse);
         await handleEndInterview();
         return;
       }
 
-      const aiMsg = { speaker: 'AI' as 'AI', text: data.response };
+      const cleanedResponse = sanitizeAIOutput(data.response);
+      const aiMsg = { speaker: 'AI' as 'AI', text: cleanedResponse };
       transcriptRef.current.push(aiMsg);
       setTranscript([...transcriptRef.current]);
 
       // Update candidateAnswers' latest question to whatever the AI asked
-      candidateAnswers.current.push({ q: data.response, a: '' });
+      candidateAnswers.current.push({ q: cleanedResponse, a: '' });
 
-      await speak(data.response);
+      await speak(cleanedResponse);
 
       // Reset text and start listening purely for the candidate's answer
       setCurrentAnswer('');
@@ -280,7 +302,12 @@ export default function InterviewRoom() {
     await askNextQuestion(transcriptRef.current);
   };
 
+  const handleShowInstructions = () => {
+    setShowInstructions(true);
+  };
+
   const startInterviewProcess = async () => {
+    setShowInstructions(false);
     setIsStarted(true);
     if (stream) {
       mediaRecorderRef.current = new MediaRecorder(stream);
@@ -387,8 +414,22 @@ export default function InterviewRoom() {
           {stream ? <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" /> : <Video size={16} />}
           <span className="font-semibold">{interview?.title || 'Loading Interview...'}</span>
         </div>
-        <div className="text-sm font-medium text-slate-400">
-          Candidate: <span className="text-white">{candidate?.name || '...'}</span>
+        
+        <div className="flex items-center gap-6">
+          <div className="hidden sm:block text-sm font-medium text-slate-400">
+            Candidate: <span className="text-white">{candidate?.name || '...'}</span>
+          </div>
+
+          {supportEmail && (
+            <a 
+              href={`mailto:${supportEmail}`}
+              title="Contact Support"
+              className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-xs font-semibold text-blue-400 transition-all hover:scale-105"
+            >
+              <Mail size={14} />
+              <span className="hidden xs:inline">Support</span>
+            </a>
+          )}
         </div>
       </header>
 
@@ -396,15 +437,100 @@ export default function InterviewRoom() {
         <div className="flex-1 rounded-3xl overflow-hidden bg-white/5 border border-white/10 relative shadow-2xl flex items-center justify-center">
           <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
 
-          {!isStarted && (
+          {!isStarted && !showInstructions && (
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center">
               <button
-                onClick={startInterviewProcess}
+                onClick={handleShowInstructions}
                 className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-4 rounded-full font-bold text-lg flex items-center gap-3 transition-transform hover:scale-105"
               >
                 <Play fill="currentColor" size={20} />
                 Start Interview
               </button>
+            </div>
+          )}
+
+          {showInstructions && !isStarted && (
+            <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-950 z-[100] flex items-center justify-center overflow-y-auto p-6">
+              <div className="max-w-2xl w-full space-y-6">
+                <div className="text-center space-y-3">
+                  <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-600/20 border border-blue-500/30 mb-2">
+                    <BookOpen size={32} className="text-blue-400" />
+                  </div>
+                  <h2 className="text-3xl font-bold text-white">Interview Instructions</h2>
+                  <p className="text-slate-400 text-sm">Please read the following instructions carefully before beginning your interview.</p>
+                </div>
+
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-6 space-y-4">
+                  <div className="flex items-start gap-3">
+                    <CheckCircle2 size={20} className="text-green-400 mt-0.5 shrink-0" />
+                    <p className="text-slate-200 text-sm leading-relaxed">
+                      <span className="font-semibold text-white">Camera & Microphone:</span> Your camera and microphone will remain active throughout the entire interview for recording purposes.
+                    </p>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <CheckCircle2 size={20} className="text-green-400 mt-0.5 shrink-0" />
+                    <p className="text-slate-200 text-sm leading-relaxed">
+                      <span className="font-semibold text-white">Listen First:</span> The AI interviewer will ask you questions one at a time. Please <span className="text-blue-400 font-semibold">wait for the AI to finish speaking</span> completely before you begin your response.
+                    </p>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <CheckCircle2 size={20} className="text-green-400 mt-0.5 shrink-0" />
+                    <p className="text-slate-200 text-sm leading-relaxed">
+                      <span className="font-semibold text-white">Answering:</span> Once the AI has finished speaking, you will see a <span className="text-green-400 font-semibold">"Listening..."</span> indicator. Speak clearly into your microphone to answer. Your speech will be transcribed in real-time.
+                    </p>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <CheckCircle2 size={20} className="text-green-400 mt-0.5 shrink-0" />
+                    <p className="text-slate-200 text-sm leading-relaxed">
+                      <span className="font-semibold text-white">Submitting Your Answer:</span> When you have finished answering, click the <span className="text-red-400 font-semibold">"Submit Answer"</span> button. The AI will then proceed to the next question. Do <span className="font-bold">not</span> click submit while you are still speaking.
+                    </p>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <CheckCircle2 size={20} className="text-green-400 mt-0.5 shrink-0" />
+                    <p className="text-slate-200 text-sm leading-relaxed">
+                      <span className="font-semibold text-white">Interview Flow:</span> The AI will first check if you are ready, then ask for a brief introduction, and finally proceed to the interview questions one by one.
+                    </p>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <CheckCircle2 size={20} className="text-green-400 mt-0.5 shrink-0" />
+                    <p className="text-slate-200 text-sm leading-relaxed">
+                      <span className="font-semibold text-white">Automatic Completion:</span> The interview will automatically end when all questions have been covered. Your video, transcript, and evaluation will be securely saved.
+                    </p>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle size={20} className="text-amber-400 mt-0.5 shrink-0" />
+                    <p className="text-slate-200 text-sm leading-relaxed">
+                      <span className="font-semibold text-amber-300">Important:</span> Do <span className="font-bold">not</span> refresh, close, or navigate away from this page during the interview. Doing so will result in loss of your progress.
+                    </p>
+                  </div>
+
+                  {supportEmail && (
+                    <div className="flex items-start gap-3 pt-2 border-t border-white/10">
+                      <Mail size={20} className="text-blue-400 mt-0.5 shrink-0" />
+                      <p className="text-slate-200 text-sm leading-relaxed">
+                        <span className="font-semibold text-white">Technical Issues:</span> If you experience any <span className="italic">technical difficulties</span> during the interview (e.g., microphone not working, page freezing), please email{' '}
+                        <a href={`mailto:${supportEmail}`} className="text-blue-400 hover:text-blue-300 underline font-semibold">{supportEmail}</a>. This is for technical issues only.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex justify-center pt-2">
+                  <button
+                    onClick={startInterviewProcess}
+                    className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-10 py-4 rounded-full font-bold text-lg flex items-center gap-3 transition-all hover:scale-105 shadow-[0_0_40px_-10px_var(--color-blue-600)]"
+                  >
+                    I Understand, Begin Interview
+                    <ArrowRight size={20} />
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
