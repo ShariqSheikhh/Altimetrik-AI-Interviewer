@@ -96,18 +96,32 @@ You will receive <start> token and start with this below workflow
 8. If the candidate asks about the Job Description (JD), respond ONLY with: "I'm here to conduct your interview. Let's focus on the questions."
 
 ## Question Asking Rules
-- Never paste a question verbatim — rephrase it naturally and conversationally.
+- **NEVER repeat a question you have already asked.**
+- **NEVER paste a question verbatim** — you must rephrase it naturally and conversationally.
 - Ask only one question at a time.
 - Never reveal the answer to any question.
-- Never ask more than one follow-up per question.
+- **Handling "I don't know"**: If the candidate states they do not know the answer, do NOT ask any follow-up questions. Simply acknowledge gracefully and move immediately to the next question.
+- If they attempt an answer but it's incomplete or unclear, ask exactly ONE follow-up question to clarify. Do not ask more than one follow-up per question.
 - Don't ask any question out of the provided list of Questions.
 
 ## General Conduct
 - Keep the tone professional, encouraging, and neutral throughout.
 
+## Output Format
+You MUST respond with a valid JSON object matching this exact schema. Do not include any markdown wrappers (e.g., \`\`\`json) or conversational text outside the JSON.
+
+{
+  "diagnostic_thoughts": "<Briefly analyze the conversation history. What was the last thing you asked? Did the user answer it? What is the logical next step?>",
+  "current_question_index": <Integer representing the 1-based index of the question you are currently asking or following up on. Use null if not in the questioning phase.>,
+  "response_text": "<The actual spoken text to reply to the candidate.>",
+  "is_completed": <boolean, true ONLY if all questions have been asked and answered, and you are thanking the candidate to end the interview.>
+}
+
 ## Finishing the interview
-When all questions have been asked and answered, thank the candidate warmly, let them know the interview is now over, and wish them well.
-End your message with exactly: [INTERVIEW_ENDED]
+When all questions have been asked and answered, provide a very brief concluding note (e.g., "Thank you for your time today. This concludes our interview. Have a great day!"). 
+- Do NOT ask if they have any questions for you. 
+- Do NOT ask any follow-up questions.
+- Set "is_completed" to true in your JSON response.
 `;
 
 export async function POST(req: Request) {
@@ -165,7 +179,7 @@ ${systemInstruction}
 Conversation so far:
 ${chatHistory}
 
-Based on the instructions, what is the AI interviewer's next response? Return ONLY the response text.
+Based on the instructions, what is the AI interviewer's next response? Return ONLY the strictly formatted JSON object as requested.
 `;
 
       const payload = {
@@ -191,10 +205,29 @@ Based on the instructions, what is the AI interviewer's next response? Return ON
 
       const response = await bedrockClient.send(command);
       const responseBody = JSON.parse(new TextDecoder().decode(response.body));
-      const rawResponse = responseBody.output?.message?.content?.[0]?.text?.trim() || "I apologize, could you repeat that?";
+      let rawResponse = responseBody.output?.message?.content?.[0]?.text?.trim() || "{}";
 
-      const isCompleted = rawResponse.includes('[INTERVIEW_ENDED]');
-      const cleanResponse = sanitizeOutput(rawResponse);
+      // Sometimes models STILL wrap in markdown despite instructions, so strip it
+      if (rawResponse.startsWith('\`\`\`json')) {
+        rawResponse = rawResponse.replace(/^\`\`\`json\s*/, '').replace(/\s*\`\`\`$/, '');
+      } else if (rawResponse.startsWith('\`\`\`')) {
+        rawResponse = rawResponse.replace(/^\`\`\`\s*/, '').replace(/\s*\`\`\`$/, '');
+      }
+
+      let parsedJson: { response_text?: string; is_completed?: boolean } = {};
+      try {
+        parsedJson = JSON.parse(rawResponse);
+      } catch (e) {
+        console.error("Failed to parse LLM JSON output:", rawResponse);
+        // Fallback heuristic if parsing fails completely
+        parsedJson = {
+          response_text: sanitizeOutput(rawResponse),
+          is_completed: rawResponse.includes('[INTERVIEW_ENDED]') || rawResponse.includes('"is_completed": true')
+        };
+      }
+
+      const cleanResponse = sanitizeOutput(parsedJson.response_text || "I apologize, could you repeat that?");
+      const isCompleted = !!parsedJson.is_completed;
 
       return NextResponse.json({
         response: cleanResponse,

@@ -414,14 +414,14 @@ export default function InterviewRoom() {
           {stream ? <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" /> : <Video size={16} />}
           <span className="font-semibold">{interview?.title || 'Loading Interview...'}</span>
         </div>
-        
+
         <div className="flex items-center gap-6">
           <div className="hidden sm:block text-sm font-medium text-slate-400">
             Candidate: <span className="text-white">{candidate?.name || '...'}</span>
           </div>
 
           {supportEmail && (
-            <a 
+            <a
               href={`mailto:${supportEmail}`}
               title="Contact Support"
               className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-xs font-semibold text-blue-400 transition-all hover:scale-105"
@@ -479,6 +479,13 @@ export default function InterviewRoom() {
                     <CheckCircle2 size={20} className="text-green-400 mt-0.5 shrink-0" />
                     <p className="text-slate-200 text-sm leading-relaxed">
                       <span className="font-semibold text-white">Answering:</span> Once the AI has finished speaking, you will see a <span className="text-green-400 font-semibold">"Listening..."</span> indicator. Speak clearly into your microphone to answer. Your speech will be transcribed in real-time.
+                    </p>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <CheckCircle2 size={20} className="text-green-400 mt-0.5 shrink-0" />
+                    <p className="text-slate-200 text-sm leading-relaxed">
+                      <span className="font-semibold text-white">Clarification:</span> You can ask to repeat the question or request clarification if you don’t understand it. You can also say that you don’t know the answer if you're unsure.
                     </p>
                   </div>
 
