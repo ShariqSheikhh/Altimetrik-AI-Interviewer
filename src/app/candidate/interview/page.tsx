@@ -7,11 +7,11 @@ import { Mic, MicOff, Video, Play, ShieldCheck } from 'lucide-react';
 
 export default function InterviewRoom() {
   const router = useRouter();
-  
+
   const [candidate, setCandidate] = useState<any>(null);
   const [interview, setInterview] = useState<any>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
-  
+
   const [isStarted, setIsStarted] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
   const [isUploadComplete, setIsUploadComplete] = useState(
@@ -19,20 +19,21 @@ export default function InterviewRoom() {
   );
   const [isListening, setIsListening] = useState(false);
   const [currentAnswer, setCurrentAnswer] = useState('');
-  const [transcript, setTranscript] = useState<{speaker: 'AI' | 'Candidate', text: string}[]>([]);
-  const transcriptRef = useRef<{speaker: 'AI' | 'Candidate', text: string}[]>([]);
+  const [transcript, setTranscript] = useState<{ speaker: 'AI' | 'Candidate', text: string }[]>([]);
+  const transcriptRef = useRef<{ speaker: 'AI' | 'Candidate', text: string }[]>([]);
   const [savingStatus, setSavingStatus] = useState('');
-  
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunks = useRef<Blob[]>([]);
   const recognitionRef = useRef<any>(null);
   const streamRef = useRef<MediaStream | null>(null); // always holds the live stream
-  
+
   const questionIndex = useRef(-1);
-  const candidateAnswers = useRef<{q: string, a: string}[]>([]);
+  const candidateAnswers = useRef<{ q: string, a: string }[]>([]);
   const finalizedTextRef = useRef('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const selectedVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -48,7 +49,7 @@ export default function InterviewRoom() {
     if (sessionStorage.getItem('interview_done') === 'true') {
       navigator.mediaDevices.getUserMedia({ video: true, audio: true })
         .then(ms => ms.getTracks().forEach(t => t.stop()))
-        .catch(() => {});
+        .catch(() => { });
       setIsCompleted(true);
       return;
     }
@@ -77,7 +78,7 @@ export default function InterviewRoom() {
       recognitionRef.current = new SpeechRec();
       recognitionRef.current.continuous = true;
       recognitionRef.current.interimResults = true;
-      
+
       recognitionRef.current.onresult = (event: any) => {
         let finalTrans = '';
         let interimTrans = '';
@@ -90,19 +91,126 @@ export default function InterviewRoom() {
       };
     }
 
+    const loadVoices = () => {
+      const voices = window.speechSynthesis.getVoices();
+      selectedVoiceRef.current =
+        voices.find(v => v.name.includes('Microsoft Ava Online')) ||
+        voices.find(v => v.name.includes('Google UK English Male')) ||
+        voices.find(v => v.name.includes('Google UK English Female')) ||
+        voices.find(v => v.name.includes('Google US English')) ||
+        voices.find(v => v.name.includes('Microsoft Neerja Online')) ||
+        voices.find(v => v.name.includes('Microsoft Andrew Online')) ||
+        voices.find(v => v.name.includes('Microsoft Emma Online')) ||
+        voices.find(v => v.name.includes('Natural')) ||
+        voices.find(v => v.name.includes('Microsoft Zira')) ||
+        voices.find(v => v.name.includes('Microsoft David')) ||
+        voices.find(v => v.lang === 'en-US' && /female|zira|samantha/i.test(v.name)) ||
+        voices.find(v => v.lang === 'en-GB') ||
+        voices.find(v => v.lang === 'en-US') ||
+        voices[0] ||
+        null;
+    };
+
+    loadVoices();
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+
     return () => {
       stream?.getTracks().forEach(t => t.stop());
-      try { recognitionRef.current?.stop(); } catch(e){}
+      try { recognitionRef.current?.stop(); } catch (e) { }
+      try { window.speechSynthesis.cancel(); } catch (e) { }
     };
   }, []);
 
-  const speak = (text: string) => {
+  const splitIntoChunks = (text: string): string[] => {
+    return text
+      .replace(/\s+/g, ' ')
+      .trim()
+      .match(/[^.!?]+[.!?]*|.+$/g) || [];
+  };
+
+  const preprocessText = (text: string): string => {
+    return text
+      .replace(/\s+/g, ' ')
+      .replace(/:\s*/g, ', ')
+      .replace(/;\s*/g, ', ')
+      .replace(/\(\s*/g, ', ')
+      .replace(/\s*\)/g, ', ')
+      .trim();
+  };
+
+  const getSentenceStyle = (sentence: string, index: number, total: number) => {
+    let rate = 0.98;
+    let pitch = 1.02;
+
+    const s = sentence.trim();
+
+    if (s.endsWith('?')) {
+      rate = 1.0;
+      pitch = 1.08;
+    } else if (s.endsWith('!')) {
+      rate = 1.03;
+      pitch = 1.1;
+    } else if (s.length > 120) {
+      rate = 0.95;
+      pitch = 1.0;
+    }
+
+    if (index === total - 1) {
+      rate -= 0.01;
+    }
+
+    return { rate, pitch };
+  };
+
+  const speakChunk = (sentence: string, index: number, total: number) => {
     return new Promise<void>((resolve) => {
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 0.9;
+      const utterance = new SpeechSynthesisUtterance(sentence);
+      const style = getSentenceStyle(sentence, index, total);
+
+      utterance.voice = selectedVoiceRef.current;
+      utterance.rate = style.rate;
+      utterance.pitch = style.pitch;
+      utterance.volume = 1;
+
       utterance.onend = () => resolve();
+      utterance.onerror = () => resolve();
+
       window.speechSynthesis.speak(utterance);
     });
+  };
+
+  const speak = async (text: string) => {
+    window.speechSynthesis.cancel();
+
+    if (!selectedVoiceRef.current) {
+      const voices = window.speechSynthesis.getVoices();
+      selectedVoiceRef.current =
+        voices.find(v => v.name.includes('Microsoft Ava Online')) ||
+        voices.find(v => v.name.includes('Google UK English Male')) ||
+        voices.find(v => v.name.includes('Google UK English Female')) ||
+        voices.find(v => v.name.includes('Google US English')) ||
+        voices.find(v => v.name.includes('Microsoft Neerja Online')) ||
+        voices.find(v => v.name.includes('Microsoft Andrew Online')) ||
+        voices.find(v => v.name.includes('Microsoft Emma Online')) ||
+        voices.find(v => v.name.includes('Natural')) ||
+        voices.find(v => v.name.includes('Microsoft Zira')) ||
+        voices.find(v => v.name.includes('Microsoft David')) ||
+        voices.find(v => v.lang === 'en-US' && /female|zira|samantha/i.test(v.name)) ||
+        voices.find(v => v.lang === 'en-GB') ||
+        voices.find(v => v.lang === 'en-US') ||
+        voices[0] ||
+        null;
+    }
+
+    const processed = preprocessText(text);
+
+    if (!processed) return;
+
+    const chunks = splitIntoChunks(processed);
+
+    for (let i = 0; i < chunks.length; i++) {
+      await speakChunk(chunks[i].trim(), i, chunks.length);
+    }
   };
 
   const askNextQuestion = async (currentTranscript = transcriptRef.current) => {
@@ -116,9 +224,9 @@ export default function InterviewRoom() {
           transcript: currentTranscript
         })
       });
-      
+
       const data = await res.json();
-      
+
       if (data.isCompleted) {
         setIsCompleted(true);
         const finalMsg = { speaker: 'AI' as 'AI', text: data.response };
@@ -132,12 +240,12 @@ export default function InterviewRoom() {
       const aiMsg = { speaker: 'AI' as 'AI', text: data.response };
       transcriptRef.current.push(aiMsg);
       setTranscript([...transcriptRef.current]);
-      
+
       // Update candidateAnswers' latest question to whatever the AI asked
       candidateAnswers.current.push({ q: data.response, a: '' });
 
       await speak(data.response);
-      
+
       // Reset text and start listening purely for the candidate's answer
       setCurrentAnswer('');
       finalizedTextRef.current = '';
@@ -145,7 +253,7 @@ export default function InterviewRoom() {
         try {
           setIsListening(true);
           recognitionRef.current.start();
-        } catch (e) {}
+        } catch (e) { }
       }
     } catch (e) {
       console.error(e);
@@ -159,16 +267,16 @@ export default function InterviewRoom() {
     }
 
     const finalAnswer = currentAnswer.trim() || '(No response audible)';
-    
+
     // Fill the answer for the last question the AI asked
     if (candidateAnswers.current.length > 0) {
       candidateAnswers.current[candidateAnswers.current.length - 1].a = finalAnswer;
     }
-    
+
     const candidateMsg = { speaker: 'Candidate' as 'Candidate', text: finalAnswer };
     transcriptRef.current.push(candidateMsg);
     setTranscript([...transcriptRef.current]);
-    
+
     await askNextQuestion(transcriptRef.current);
   };
 
@@ -186,13 +294,13 @@ export default function InterviewRoom() {
 
   const handleEndInterview = async () => {
     setSavingStatus('Evaluating answers and saving video...');
-    
+
     // Stop capturing new audio/video data for the recording upload
-    try { recognitionRef.current?.stop(); } catch(e){}
+    try { recognitionRef.current?.stop(); } catch (e) { }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
     }
-    
+
     // Evaluate via pure JSON Eval endpoint
     let evaluationResult: { score?: number; feedback?: string; aspects?: any } = {};
     try {
@@ -231,14 +339,14 @@ export default function InterviewRoom() {
         setSavingStatus('Uploading session recording...');
         const videoBlob = new Blob(recordedChunks.current, { type: 'video/webm' });
         const fileName = `interview-${interview.id}-candidate-${candidate.id}-${Date.now()}.webm`;
-        
+
         const { data: uploadData, error: uploadError } = await supabase
           .storage
           .from('videos')
           .upload(fileName, videoBlob, { contentType: 'video/webm' });
-        
+
         console.log('[Video Upload] data:', uploadData, '| error:', uploadError);
-          
+
         if (uploadData && !uploadError) {
           const { data: { publicUrl } } = supabase.storage.from('videos').getPublicUrl(fileName);
           finalVideoUrl = publicUrl;
@@ -257,12 +365,12 @@ export default function InterviewRoom() {
         transcript_data: { full_transcript: candidateAnswers.current.filter((item) => item.a !== '') },
         video_url: finalVideoUrl || null
       }]);
-      
+
       setSavingStatus('Your results are saved securely.');
       sessionStorage.setItem('interview_done', 'true');
       // Stop all media before refreshing so camera light turns off
       streamRef.current?.getTracks().forEach(t => t.stop());
-      try { recognitionRef.current?.stop(); } catch(e){}
+      try { recognitionRef.current?.stop(); } catch (e) { }
       window.location.reload();
     } catch (err) {
       setSavingStatus('Server error saving. Please contact admin.');
@@ -287,10 +395,10 @@ export default function InterviewRoom() {
       <main className="flex-1 flex flex-col md:flex-row p-6 gap-6 relative overflow-hidden">
         <div className="flex-1 rounded-3xl overflow-hidden bg-white/5 border border-white/10 relative shadow-2xl flex items-center justify-center">
           <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-          
+
           {!isStarted && (
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center">
-              <button 
+              <button
                 onClick={startInterviewProcess}
                 className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-4 rounded-full font-bold text-lg flex items-center gap-3 transition-transform hover:scale-105"
               >
@@ -309,13 +417,13 @@ export default function InterviewRoom() {
               <p className={`text-indigo-200 text-lg mb-8 ${!isUploadComplete ? 'animate-pulse' : ''}`}>
                 {savingStatus}
               </p>
-              
+
               {isUploadComplete && (
                 <button
                   onClick={() => {
                     sessionStorage.removeItem('interview_done');
                     streamRef.current?.getTracks().forEach(t => t.stop());
-                    try { recognitionRef.current?.stop(); } catch(e){}
+                    try { recognitionRef.current?.stop(); } catch (e) { }
                     router.push('/');
                   }}
                   className="bg-red-600 hover:bg-red-500 text-white font-bold px-10 py-4 rounded-full transition-transform hover:scale-105 shadow-[0_0_30px_-5px_var(--color-red-600)]"
@@ -331,7 +439,7 @@ export default function InterviewRoom() {
               <div className="flex items-center gap-3 text-sm font-semibold text-white">
                 <Mic size={20} className="text-green-400 animate-pulse" /> Listening to your answer...
               </div>
-              <button 
+              <button
                 onClick={submitAnswer}
                 className="bg-red-600 hover:bg-red-500 text-white px-6 py-2 rounded-full text-sm font-bold flex items-center gap-2 transition-transform hover:scale-105"
               >
@@ -349,9 +457,8 @@ export default function InterviewRoom() {
             {transcript.map((msg, i) => (
               <div key={i} className={`flex flex-col ${msg.speaker === 'Candidate' ? 'items-end' : 'items-start'}`}>
                 <span className="text-[10px] uppercase font-bold text-slate-500 mb-1 px-1">{msg.speaker}</span>
-                <div className={`px-4 py-2 rounded-2xl max-w-[85%] text-sm leading-relaxed ${
-                  msg.speaker === 'Candidate' ? 'bg-blue-600 text-white rounded-tr-sm' : 'bg-white/10 text-slate-200 rounded-tl-sm'
-                }`}>
+                <div className={`px-4 py-2 rounded-2xl max-w-[85%] text-sm leading-relaxed ${msg.speaker === 'Candidate' ? 'bg-blue-600 text-white rounded-tr-sm' : 'bg-white/10 text-slate-200 rounded-tl-sm'
+                  }`}>
                   {msg.text}
                 </div>
               </div>
