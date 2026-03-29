@@ -3,9 +3,9 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import * as XLSX from 'xlsx';
 import { Upload, Plus, FileSpreadsheet, Loader2, ArrowLeft, Trash2 } from 'lucide-react';
 import Link from 'next/link';
-import * as XLSX from 'xlsx';
 
 export default function CreateTest() {
   const router = useRouter();
@@ -108,18 +108,8 @@ export default function CreateTest() {
 
       if (cError) throw cError;
 
-      // Automatically download the passkeys list for the recruiter
-      const ws = XLSX.utils.json_to_sheet(candidatesToInsert.map(c => ({
-        Name: c.name,
-        Email: c.email,
-        Passkey: c.passkey,
-        LoginLink: window.location.origin + '/candidate/login'
-      })));
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Candidates");
-      XLSX.writeFile(wb, `${title.replace(/\s+/g, '_')}_Credentials.xlsx`);
-
-      router.push('/admin/dashboard');
+      // Redirect to send email page
+      router.push(`/admin/interviews/${interview.id}/send-email`);
     } catch (err: any) {
       setError(err.message || 'Error saving test');
       setLoading(false);
@@ -271,7 +261,7 @@ export default function CreateTest() {
               disabled={loading}
               className="bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-full px-10 py-4 flex items-center gap-3 transition-all shadow-[0_0_30px_-5px_var(--color-blue-600)] disabled:opacity-50"
             >
-              {loading ? <Loader2 className="animate-spin" size={20} /> : <><Upload size={20} /> Create Test & Export Keys</>}
+              {loading ? <Loader2 className="animate-spin" size={20} /> : <><Upload size={20} /> Create Test & Send Invites</>}
             </button>
           </div>
         </div>

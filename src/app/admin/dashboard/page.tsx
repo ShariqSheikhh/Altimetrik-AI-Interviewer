@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { Plus, Users, Search, FolderClosed, ArrowRight, ShieldCheck, Video, LayoutDashboard } from 'lucide-react';
+import { Plus, Users, Search, FolderClosed, ArrowRight, ShieldCheck, Video, LayoutDashboard, BarChart3 } from 'lucide-react';
 import Link from 'next/link';
 
 export default function AdminDashboard() {
@@ -58,7 +58,7 @@ export default function AdminDashboard() {
             </h2>
           </div>
 
-          <div className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden backdrop-blur-sm">
+          <div className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden backdrop-blur-sm max-h-[600px] overflow-y-auto">
             {loading ? (
               <div className="p-12 text-center text-slate-500 animate-pulse">Loading data...</div>
             ) : results.length === 0 ? (
@@ -127,14 +127,20 @@ export default function AdminDashboard() {
             </h2>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-h-[480px] overflow-y-auto">
             {interviews.map(inv => (
               <div key={inv.id} className="bg-white/5 border border-white/10 rounded-3xl p-6 relative group hover:bg-white/10 transition-colors">
                 <div className="absolute top-4 right-4 w-2 h-2 rounded-full bg-green-500 shadow-[0_0_10px_var(--color-green-500)]" />
                 <h3 className="text-lg font-bold text-white mb-2">{inv.title}</h3>
                 <p className="text-sm text-slate-400 mb-6">{inv.question_bank.length} Questions Configured</p>
-                <div className="text-xs text-slate-500 border-t border-white/10 pt-4 mt-auto">
-                  Created {new Date(inv.created_at).toLocaleDateString()}
+                <div className="text-xs text-slate-500 border-t border-white/10 pt-4 mt-auto flex items-center justify-between">
+                  <span>Created {new Date(inv.created_at).toLocaleDateString()}</span>
+                  <Link
+                    href={`/admin/interviews/${inv.id}/status`}
+                    className="inline-flex items-center gap-1 text-blue-400 hover:text-blue-300 transition-colors font-medium"
+                  >
+                    <BarChart3 size={14} /> View Status
+                  </Link>
                 </div>
               </div>
             ))}
