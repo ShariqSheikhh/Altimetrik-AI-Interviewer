@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
     let failedCount = 0;
 
     for (const candidate of candidates) {
-      const loginLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/candidate/login`;
+      const loginLink = `${process.env.NEXT_PUBLIC_APP_URL}/candidate/login`;
 
       const personalizedHtml = htmlContent
         .replace(/{{candidateName}}/g, candidate.name || 'Candidate')
