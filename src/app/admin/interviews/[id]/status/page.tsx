@@ -258,7 +258,7 @@ export default function InterviewStatusPage() {
                       </code>
                     </td>
                     <td className="px-6 py-4">
-                      {candidate.result?.evaluation?.score ? (
+                      {typeof candidate.result?.evaluation?.score === 'number' ? (
                         <span
                           className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${
                             candidate.result.evaluation.score >= 60
