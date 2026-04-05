@@ -41,8 +41,7 @@ export default function ResultDetails() {
   }
 
   const score = result.evaluation?.score || 0;
-  const isGoodScore = score >= 70;
-  const isAverageScore = score >= 40 && score < 70;
+  const isGoodScore = score >= 60;
 
   return (
     <div className="min-h-screen bg-[#0a0f1c] text-white p-6 md:p-8 selection:bg-blue-500/30">
@@ -61,8 +60,7 @@ export default function ResultDetails() {
           </div>
 
           <div className={`px-6 py-3 rounded-2xl flex items-center gap-4 ${
-            isGoodScore ? 'bg-green-500/10 border border-green-500/20 text-green-400' : 
-            isAverageScore ? 'bg-yellow-500/10 border border-yellow-500/20 text-yellow-400' : 
+            isGoodScore ? 'bg-green-500/10 border border-green-500/20 text-green-400' :
             'bg-red-500/10 border border-red-500/20 text-red-400'
           }`}>
             <span className="font-semibold text-sm uppercase tracking-wide opacity-80">AI Match Score</span>
@@ -143,8 +141,12 @@ export default function ResultDetails() {
                   {result.evaluation.aspects.communication && (
                     <div className="bg-black/40 p-4 rounded-2xl border border-white/5">
                       <div className="flex justify-between items-center mb-2">
-                        <span className="font-semibold text-blue-400 text-sm">Communication Clarity</span>
-                        <span className="text-xs font-bold bg-blue-500/20 text-blue-300 px-2 py-1 rounded">{result.evaluation.aspects.communication.score}/25</span>
+                        <span className="font-semibold text-white text-sm">Communication Clarity</span>
+                        <span className={`text-xs font-bold px-2 py-1 rounded ${
+                          result.evaluation.aspects.communication.score >= 15
+                            ? 'bg-green-500/20 text-green-300'
+                            : 'bg-red-500/20 text-red-300'
+                        }`}>{result.evaluation.aspects.communication.score}/25</span>
                       </div>
                       <p className="text-sm text-slate-300 leading-relaxed">{result.evaluation.aspects.communication.feedback}</p>
                     </div>
@@ -153,8 +155,12 @@ export default function ResultDetails() {
                   {result.evaluation.aspects.relevance && (
                     <div className="bg-black/40 p-4 rounded-2xl border border-white/5">
                       <div className="flex justify-between items-center mb-2">
-                        <span className="font-semibold text-green-400 text-sm">Relevance & Depth</span>
-                        <span className="text-xs font-bold bg-green-500/20 text-green-300 px-2 py-1 rounded">{result.evaluation.aspects.relevance.score}/25</span>
+                        <span className="font-semibold text-white text-sm">Relevance & Depth</span>
+                        <span className={`text-xs font-bold px-2 py-1 rounded ${
+                          result.evaluation.aspects.relevance.score >= 15
+                            ? 'bg-green-500/20 text-green-300'
+                            : 'bg-red-500/20 text-red-300'
+                        }`}>{result.evaluation.aspects.relevance.score}/25</span>
                       </div>
                       <p className="text-sm text-slate-300 leading-relaxed">{result.evaluation.aspects.relevance.feedback}</p>
                     </div>
@@ -163,8 +169,12 @@ export default function ResultDetails() {
                   {result.evaluation.aspects.problem_solving && (
                     <div className="bg-black/40 p-4 rounded-2xl border border-white/5">
                       <div className="flex justify-between items-center mb-2">
-                        <span className="font-semibold text-purple-400 text-sm">Problem-Solving & Critical Thinking</span>
-                        <span className="text-xs font-bold bg-purple-500/20 text-purple-300 px-2 py-1 rounded">{result.evaluation.aspects.problem_solving.score}/25</span>
+                        <span className="font-semibold text-white text-sm">Problem-Solving & Critical Thinking</span>
+                        <span className={`text-xs font-bold px-2 py-1 rounded ${
+                          result.evaluation.aspects.problem_solving.score >= 15
+                            ? 'bg-green-500/20 text-green-300'
+                            : 'bg-red-500/20 text-red-300'
+                        }`}>{result.evaluation.aspects.problem_solving.score}/25</span>
                       </div>
                       <p className="text-sm text-slate-300 leading-relaxed">{result.evaluation.aspects.problem_solving.feedback}</p>
                     </div>
@@ -173,8 +183,12 @@ export default function ResultDetails() {
                   {result.evaluation.aspects.specificity && (
                     <div className="bg-black/40 p-4 rounded-2xl border border-white/5">
                       <div className="flex justify-between items-center mb-2">
-                        <span className="font-semibold text-yellow-400 text-sm">Specificity & Use of Examples</span>
-                        <span className="text-xs font-bold bg-yellow-500/20 text-yellow-300 px-2 py-1 rounded">{result.evaluation.aspects.specificity.score}/25</span>
+                        <span className="font-semibold text-white text-sm">Specificity & Use of Examples</span>
+                        <span className={`text-xs font-bold px-2 py-1 rounded ${
+                          result.evaluation.aspects.specificity.score >= 15
+                            ? 'bg-green-500/20 text-green-300'
+                            : 'bg-red-500/20 text-red-300'
+                        }`}>{result.evaluation.aspects.specificity.score}/25</span>
                       </div>
                       <p className="text-sm text-slate-300 leading-relaxed">{result.evaluation.aspects.specificity.feedback}</p>
                     </div>

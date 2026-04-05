@@ -90,8 +90,7 @@ export default function AdminDashboard() {
                       <td className="px-6 py-4">
                         {res.evaluation?.score ? (
                           <div className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${
-                            res.evaluation.score >= 80 ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 
-                            res.evaluation.score >= 50 ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' : 
+                            res.evaluation.score >= 60 ? 'bg-green-500/10 text-green-400 border border-green-500/20' :
                             'bg-red-500/10 text-red-400 border border-red-500/20'
                           }`}>
                             {res.evaluation.score}/100
