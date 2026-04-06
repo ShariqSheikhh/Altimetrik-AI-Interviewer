@@ -18,23 +18,17 @@ export default function AdminLogin() {
     setError('');
 
     try {
-      // MVP Bypass: If Supabase Auth isn't fully configured yet
-      if (email === 'admin@example.com' && password === 'password') {
-        router.push('/admin/dashboard');
-        return;
-      }
-
-      // Attempt proper Supabase Auth
+      // Supabase Auth — only verified admin accounts can log in
       const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (error) throw error;
-      
+
       router.push('/admin/dashboard');
     } catch (err: any) {
-      setError(err.message || 'Failed to authenticate');
+      setError(err.message || 'Invalid credentials. Please contact your administrator.');
     } finally {
       setLoading(false);
     }
