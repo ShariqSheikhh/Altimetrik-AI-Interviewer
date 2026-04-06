@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { ArrowLeft, User, Video, FileText, CheckCircle2, ShieldAlert, Loader2, PlayCircle } from 'lucide-react';
+import { ArrowLeft, User, Video, FileText, CheckCircle2, ShieldAlert, Loader2, PlayCircle, Target, AlertTriangle, TrendingDown } from 'lucide-react';
 import Link from 'next/link';
 
 export default function ResultDetails() {
@@ -41,6 +41,7 @@ export default function ResultDetails() {
   }
 
   const score = result.evaluation?.score || 0;
+  const scoring = result.evaluation?.scoring;
   const isGoodScore = score >= 60;
 
   return (
@@ -63,10 +64,74 @@ export default function ResultDetails() {
             isGoodScore ? 'bg-green-500/10 border border-green-500/20 text-green-400' :
             'bg-red-500/10 border border-red-500/20 text-red-400'
           }`}>
-            <span className="font-semibold text-sm uppercase tracking-wide opacity-80">AI Match Score</span>
+            <span className="font-semibold text-sm uppercase tracking-wide opacity-80">Final Score</span>
             <span className="text-3xl font-black">{score}/100</span>
           </div>
         </div>
+
+        {/* Score Breakdown Cards */}
+        {scoring && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Rubric Score */}
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-5 backdrop-blur-sm">
+              <div className="flex items-center gap-2 mb-3">
+                <CheckCircle2 size={18} className="text-blue-400" />
+                <h4 className="font-semibold text-white text-sm">Rubric Score</h4>
+              </div>
+              <div className="flex items-baseline gap-2 mb-2">
+                <span className="text-2xl font-black text-blue-400">{scoring.rubric_score?.weighted || 0}</span>
+                <span className="text-slate-500 text-sm">/ {scoring.rubric_score?.max || 50} pts (50%)</span>
+              </div>
+              <p className="text-xs text-slate-500">{scoring.rubric_score?.description}</p>
+              <div className="mt-3 bg-black/30 rounded-lg h-2 overflow-hidden">
+                <div 
+                  className="h-full bg-blue-500 rounded-lg transition-all" 
+                  style={{ width: `${((scoring.rubric_score?.weighted || 0) / (scoring.rubric_score?.max || 50)) * 100}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Coverage Score */}
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-5 backdrop-blur-sm">
+              <div className="flex items-center gap-2 mb-3">
+                <Target size={18} className="text-green-400" />
+                <h4 className="font-semibold text-white text-sm">Coverage Score</h4>
+              </div>
+              <div className="flex items-baseline gap-2 mb-2">
+                <span className="text-2xl font-black text-green-400">{scoring.coverage_score?.weighted || 0}</span>
+                <span className="text-slate-500 text-sm">/ {scoring.coverage_score?.max || 40} pts (40%)</span>
+              </div>
+              <p className="text-xs text-slate-500">Key point coverage: {scoring.coverage_score?.percentage || 0}%</p>
+              <div className="mt-3 bg-black/30 rounded-lg h-2 overflow-hidden">
+                <div 
+                  className="h-full bg-green-500 rounded-lg transition-all" 
+                  style={{ width: `${((scoring.coverage_score?.weighted || 0) / (scoring.coverage_score?.max || 40)) * 100}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Follow-up Penalty */}
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-5 backdrop-blur-sm">
+              <div className="flex items-center gap-2 mb-3">
+                <TrendingDown size={18} className="text-red-400" />
+                <h4 className="font-semibold text-white text-sm">Follow-up Penalty</h4>
+              </div>
+              <div className="flex items-baseline gap-2 mb-2">
+                <span className="text-2xl font-black text-red-400">-{scoring.follow_up_penalty?.penalty || 0}</span>
+                <span className="text-slate-500 text-sm">/ -{scoring.follow_up_penalty?.max || 10} pts max</span>
+              </div>
+              <p className="text-xs text-slate-500">
+                {scoring.follow_up_penalty?.questions_needing_follow_ups || 0} of {scoring.follow_up_penalty?.total_questions || 0} questions needed probing
+              </p>
+              <div className="mt-3 bg-black/30 rounded-lg h-2 overflow-hidden">
+                <div 
+                  className="h-full bg-red-500 rounded-lg transition-all" 
+                  style={{ width: `${((scoring.follow_up_penalty?.penalty || 0) / (scoring.follow_up_penalty?.max || 10)) * 100}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -114,6 +179,21 @@ export default function ResultDetails() {
                         <span className="text-xs font-bold text-indigo-400 uppercase tracking-wide block mb-1">Candidate</span>
                         <p className="leading-relaxed">{item.a || '(No response recorded)'}</p>
                       </div>
+                      {/* Show follow-up if any */}
+                      {item.followUp && (
+                        <>
+                          <div className="bg-amber-500/5 p-4 rounded-xl border border-amber-500/20 rounded-tl-none">
+                            <span className="text-xs font-bold text-amber-400 uppercase tracking-wide block mb-1">Follow-up (Probing)</span>
+                            <p className="text-amber-100 font-medium">{item.followUp}</p>
+                          </div>
+                          {item.followUpAnswer && (
+                            <div className="bg-indigo-600/10 p-4 rounded-xl border border-indigo-500/20 rounded-bl-none text-indigo-100">
+                              <span className="text-xs font-bold text-indigo-400 uppercase tracking-wide block mb-1">Candidate (Follow-up Response)</span>
+                              <p className="leading-relaxed">{item.followUpAnswer}</p>
+                            </div>
+                          )}
+                        </>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -130,69 +210,90 @@ export default function ResultDetails() {
               <h3 className="font-semibold flex items-center gap-2 mb-6">
                 <ShieldAlert size={18} className="text-blue-400" /> Evaluator Feedback
               </h3>
-              <div className={`prose prose-invert prose-sm ${result.evaluation?.aspects ? 'mb-6 pb-6 border-b border-white/10' : ''}`}>
+              <div className={`prose prose-invert prose-sm ${result.evaluation?.rubric_aspects ? 'mb-6 pb-6 border-b border-white/10' : ''}`}>
                 {result.evaluation?.feedback || 'No detailed feedback provided by the AI.'}
               </div>
 
-              {result.evaluation?.aspects && (
+              {result.evaluation?.rubric_aspects && (
                 <div className="space-y-4">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4">Detailed Criteria</h4>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4">Rubric Criteria (50% weight)</h4>
                   
-                  {result.evaluation.aspects.communication && (
+                  {result.evaluation.rubric_aspects.communication && (
                     <div className="bg-black/40 p-4 rounded-2xl border border-white/5">
                       <div className="flex justify-between items-center mb-2">
                         <span className="font-semibold text-white text-sm">Communication Clarity</span>
                         <span className={`text-xs font-bold px-2 py-1 rounded ${
-                          result.evaluation.aspects.communication.score >= 15
+                          result.evaluation.rubric_aspects.communication.score >= 15
                             ? 'bg-green-500/20 text-green-300'
                             : 'bg-red-500/20 text-red-300'
-                        }`}>{result.evaluation.aspects.communication.score}/25</span>
+                        }`}>{result.evaluation.rubric_aspects.communication.score}/25</span>
                       </div>
-                      <p className="text-sm text-slate-300 leading-relaxed">{result.evaluation.aspects.communication.feedback}</p>
+                      <p className="text-sm text-slate-300 leading-relaxed">{result.evaluation.rubric_aspects.communication.feedback}</p>
                     </div>
                   )}
 
-                  {result.evaluation.aspects.relevance && (
+                  {result.evaluation.rubric_aspects.relevance && (
                     <div className="bg-black/40 p-4 rounded-2xl border border-white/5">
                       <div className="flex justify-between items-center mb-2">
                         <span className="font-semibold text-white text-sm">Relevance & Depth</span>
                         <span className={`text-xs font-bold px-2 py-1 rounded ${
-                          result.evaluation.aspects.relevance.score >= 15
+                          result.evaluation.rubric_aspects.relevance.score >= 15
                             ? 'bg-green-500/20 text-green-300'
                             : 'bg-red-500/20 text-red-300'
-                        }`}>{result.evaluation.aspects.relevance.score}/25</span>
+                        }`}>{result.evaluation.rubric_aspects.relevance.score}/25</span>
                       </div>
-                      <p className="text-sm text-slate-300 leading-relaxed">{result.evaluation.aspects.relevance.feedback}</p>
+                      <p className="text-sm text-slate-300 leading-relaxed">{result.evaluation.rubric_aspects.relevance.feedback}</p>
                     </div>
                   )}
 
-                  {result.evaluation.aspects.problem_solving && (
+                  {result.evaluation.rubric_aspects.problem_solving && (
                     <div className="bg-black/40 p-4 rounded-2xl border border-white/5">
                       <div className="flex justify-between items-center mb-2">
                         <span className="font-semibold text-white text-sm">Problem-Solving & Critical Thinking</span>
                         <span className={`text-xs font-bold px-2 py-1 rounded ${
-                          result.evaluation.aspects.problem_solving.score >= 15
+                          result.evaluation.rubric_aspects.problem_solving.score >= 15
                             ? 'bg-green-500/20 text-green-300'
                             : 'bg-red-500/20 text-red-300'
-                        }`}>{result.evaluation.aspects.problem_solving.score}/25</span>
+                        }`}>{result.evaluation.rubric_aspects.problem_solving.score}/25</span>
                       </div>
-                      <p className="text-sm text-slate-300 leading-relaxed">{result.evaluation.aspects.problem_solving.feedback}</p>
+                      <p className="text-sm text-slate-300 leading-relaxed">{result.evaluation.rubric_aspects.problem_solving.feedback}</p>
                     </div>
                   )}
 
-                  {result.evaluation.aspects.specificity && (
+                  {result.evaluation.rubric_aspects.specificity && (
                     <div className="bg-black/40 p-4 rounded-2xl border border-white/5">
                       <div className="flex justify-between items-center mb-2">
                         <span className="font-semibold text-white text-sm">Specificity & Use of Examples</span>
                         <span className={`text-xs font-bold px-2 py-1 rounded ${
-                          result.evaluation.aspects.specificity.score >= 15
+                          result.evaluation.rubric_aspects.specificity.score >= 15
                             ? 'bg-green-500/20 text-green-300'
                             : 'bg-red-500/20 text-red-300'
-                        }`}>{result.evaluation.aspects.specificity.score}/25</span>
+                        }`}>{result.evaluation.rubric_aspects.specificity.score}/25</span>
                       </div>
-                      <p className="text-sm text-slate-300 leading-relaxed">{result.evaluation.aspects.specificity.feedback}</p>
+                      <p className="text-sm text-slate-300 leading-relaxed">{result.evaluation.rubric_aspects.specificity.feedback}</p>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Per-question coverage */}
+              {scoring?.coverage_score?.per_question?.length > 0 && (
+                <div className="mt-6 pt-6 border-t border-white/10">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4">Per-Question Key Point Coverage</h4>
+                  <div className="space-y-2">
+                    {scoring.coverage_score.per_question.map((pq: any, i: number) => (
+                      <div key={i} className="flex items-center gap-3">
+                        <span className="text-xs font-bold text-slate-500 w-8">Q{pq.questionIndex + 1}</span>
+                        <div className="flex-1 bg-black/30 rounded-lg h-2 overflow-hidden">
+                          <div 
+                            className={`h-full rounded-lg transition-all ${pq.coverage >= 70 ? 'bg-green-500' : pq.coverage >= 40 ? 'bg-amber-500' : 'bg-red-500'}`}
+                            style={{ width: `${pq.coverage}%` }}
+                          />
+                        </div>
+                        <span className="text-xs font-bold text-slate-400 w-10 text-right">{pq.coverage}%</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>

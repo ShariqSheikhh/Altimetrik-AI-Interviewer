@@ -10,7 +10,7 @@ import Link from 'next/link';
 export default function CreateTest() {
   const router = useRouter();
   const [title, setTitle] = useState('');
-  const [questions, setQuestions] = useState<{question: string, answer: string}[]>([{question: '', answer: ''}]);
+  const [questions, setQuestions] = useState<{question: string, answer: string, key_points: string[]}[]>([{question: '', answer: '', key_points: []}]);
   const [candidates, setCandidates] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -57,11 +57,18 @@ export default function CreateTest() {
         const worksheet = workbook.Sheets[sheetName];
         const json = XLSX.utils.sheet_to_json(worksheet) as any[];
 
-        // Assume Excel has headers: Question, Answer
-        const parsed = json.map(row => ({
-          question: row.Question || row.question || '',
-          answer: row.Answer || row.answer || ''
-        })).filter(q => q.question.trim());
+        // Assume Excel has headers: Question, Answer, KeyPoints
+        const parsed = json.map(row => {
+          const keyPointsRaw = row.KeyPoints || row.keypoints || row.key_points || row.Keypoints || '';
+          const keyPoints = typeof keyPointsRaw === 'string'
+            ? keyPointsRaw.split(';').map((kp: string) => kp.trim()).filter((kp: string) => kp)
+            : [];
+          return {
+            question: row.Question || row.question || '',
+            answer: row.Answer || row.answer || '',
+            key_points: keyPoints,
+          };
+        }).filter(q => q.question.trim());
 
         if (parsed.length > 0) {
           if (questions.length === 1 && !questions[0].question) {
@@ -71,7 +78,7 @@ export default function CreateTest() {
           }
         }
       } catch (err) {
-        setError('Failed to parse Excel file. Ensure it has Question and Answer columns.');
+        setError('Failed to parse Excel file. Ensure it has Question, Answer, and KeyPoints columns.');
       }
     };
     reader.readAsArrayBuffer(file);
@@ -161,7 +168,7 @@ export default function CreateTest() {
                 </label>
 
                 <button 
-                  onClick={() => setQuestions([...questions, {question: '', answer: ''}])}
+                  onClick={() => setQuestions([...questions, {question: '', answer: '', key_points: []}])}
                   className="text-sm bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 px-4 py-2 rounded-xl transition-colors flex items-center gap-2"
                 >
                   <Plus size={16} /> Add 
@@ -169,7 +176,7 @@ export default function CreateTest() {
               </div>
             </div>
             
-            <p className="text-sm text-slate-400 mb-4">Upload an Excel file (.xlsx) with columns: Question, Answer.</p>
+            <p className="text-sm text-slate-400 mb-4">Upload an Excel file (.xlsx) with columns: Question, Answer, KeyPoints (semicolon-separated).</p>
             <div className="space-y-4">
               {questions.map((q, i) => (
                 <div key={i} className="flex items-start gap-4">
@@ -198,6 +205,17 @@ export default function CreateTest() {
                       rows={2}
                       className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-slate-300 focus:outline-none focus:border-green-500 transition-colors"
                       placeholder="Enter expected answer..."
+                    />
+                    <textarea
+                      value={q.key_points.join('; ')}
+                      onChange={(e) => {
+                        const newQ = [...questions];
+                        newQ[i] = { ...newQ[i], key_points: e.target.value.split(';').map(kp => kp.trim()).filter(kp => kp) };
+                        setQuestions(newQ);
+                      }}
+                      rows={2}
+                      className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-amber-300/80 focus:outline-none focus:border-amber-500 transition-colors"
+                      placeholder="Enter key points separated by semicolons (e.g. REST architecture; HTTP methods; Statelessness)"
                     />
                   </div>
                   {questions.length > 1 && (

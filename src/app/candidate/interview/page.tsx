@@ -29,13 +29,19 @@ export default function InterviewRoom() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunks = useRef<Blob[]>([]);
   const recognitionRef = useRef<any>(null);
-  const streamRef = useRef<MediaStream | null>(null); // always holds the live stream
+  const streamRef = useRef<MediaStream | null>(null);
 
   const questionIndex = useRef(-1);
-  const candidateAnswers = useRef<{ q: string, a: string }[]>([]);
+  const candidateAnswers = useRef<{ q: string, a: string, followUp?: string, followUpAnswer?: string }[]>([]);
   const finalizedTextRef = useRef('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const selectedVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
+
+  // ── Evaluator 1 tracking ──────────────────────────────────────────
+  const coveragePerQuestion = useRef<{ questionIndex: number, coverage: number }[]>([]);
+  const questionsWithFollowUps = useRef<number>(0);
+  const isAwaitingFollowUp = useRef(false);
+  const lastQuestionText = useRef('');
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -54,8 +60,6 @@ export default function InterviewRoom() {
     const iid = localStorage.getItem('interview_id');
     if (!cid || !iid) return router.push('/candidate/login');
 
-    // If we just refreshed after evaluation, stop any lingering
-    // media the browser may still be holding and show End Test UI
     if (sessionStorage.getItem('interview_done') === 'true') {
       navigator.mediaDevices.getUserMedia({ video: true, audio: true })
         .then(ms => ms.getTracks().forEach(t => t.stop()))
@@ -151,24 +155,11 @@ export default function InterviewRoom() {
   const getSentenceStyle = (sentence: string, index: number, total: number) => {
     let rate = 0.98;
     let pitch = 1.02;
-
     const s = sentence.trim();
-
-    if (s.endsWith('?')) {
-      rate = 1.0;
-      pitch = 1.08;
-    } else if (s.endsWith('!')) {
-      rate = 1.03;
-      pitch = 1.1;
-    } else if (s.length > 120) {
-      rate = 0.95;
-      pitch = 1.0;
-    }
-
-    if (index === total - 1) {
-      rate -= 0.01;
-    }
-
+    if (s.endsWith('?')) { rate = 1.0; pitch = 1.08; }
+    else if (s.endsWith('!')) { rate = 1.03; pitch = 1.1; }
+    else if (s.length > 120) { rate = 0.95; pitch = 1.0; }
+    if (index === total - 1) { rate -= 0.01; }
     return { rate, pitch };
   };
 
@@ -176,22 +167,18 @@ export default function InterviewRoom() {
     return new Promise<void>((resolve) => {
       const utterance = new SpeechSynthesisUtterance(sentence);
       const style = getSentenceStyle(sentence, index, total);
-
       utterance.voice = selectedVoiceRef.current;
       utterance.rate = style.rate;
       utterance.pitch = style.pitch;
       utterance.volume = 1;
-
       utterance.onend = () => resolve();
       utterance.onerror = () => resolve();
-
       window.speechSynthesis.speak(utterance);
     });
   };
 
   const speak = async (text: string) => {
     window.speechSynthesis.cancel();
-
     if (!selectedVoiceRef.current) {
       const voices = window.speechSynthesis.getVoices();
       selectedVoiceRef.current =
@@ -211,19 +198,15 @@ export default function InterviewRoom() {
         voices[0] ||
         null;
     }
-
     const processed = preprocessText(text);
-
     if (!processed) return;
-
     const chunks = splitIntoChunks(processed);
-
     for (let i = 0; i < chunks.length; i++) {
       await speakChunk(chunks[i].trim(), i, chunks.length);
     }
   };
 
-  // ── Client-side output sanitization (defense-in-depth) ──────────
+  // ── Client-side output sanitization ──────────────────────────────
   const sanitizeAIOutput = (text: string): string => {
     return text
       .replace(/\[INTERVIEW_ENDED\]/g, '')
@@ -233,7 +216,42 @@ export default function InterviewRoom() {
       .trim();
   };
 
-  const askNextQuestion = async (currentTranscript = transcriptRef.current) => {
+  // ── Get key points for a question (from question bank) ───────────
+  const getKeyPointsForQuestion = (qIndex: number): string[] => {
+    if (!interview?.question_bank || qIndex < 0 || qIndex >= interview.question_bank.length) {
+      return [];
+    }
+    const q = interview.question_bank[qIndex];
+    return Array.isArray(q.key_points) ? q.key_points : [];
+  };
+
+  // ── Call Evaluator 1 (live coverage check) ───────────────────────
+  const callLiveEvaluator = async (
+    question: string,
+    answer: string,
+    keyPoints: string[],
+    followUpAnswer?: string
+  ) => {
+    try {
+      const res = await fetch('/api/live-evaluate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question,
+          candidateAnswer: answer,
+          keyPoints,
+          ...(followUpAnswer ? { followUpAnswer } : {}),
+        }),
+      });
+      return await res.json();
+    } catch (e) {
+      console.error('[LiveEvaluate] Error:', e);
+      return { decision: 'move_next', covered_points: [], missed_points: keyPoints, coverage_percentage: 0 };
+    }
+  };
+
+  // ── Ask the Interviewer for next response ────────────────────────
+  const askInterviewer = async (currentTranscript: any[], followUpInstruction?: string) => {
     try {
       const res = await fetch('/api/interviewer', {
         method: 'POST',
@@ -241,47 +259,80 @@ export default function InterviewRoom() {
         body: JSON.stringify({
           action: 'ask_next',
           questionBank: interview.question_bank,
-          transcript: currentTranscript
-        })
+          transcript: currentTranscript,
+          ...(followUpInstruction ? { followUpInstruction } : {}),
+        }),
       });
-
-      const data = await res.json();
-
-      if (data.isCompleted) {
-        setIsCompleted(true);
-        const cleanedResponse = sanitizeAIOutput(data.response);
-        const finalMsg = { speaker: 'AI' as 'AI', text: cleanedResponse };
-        transcriptRef.current.push(finalMsg);
-        setTranscript([...transcriptRef.current]);
-        await speak(cleanedResponse);
-        await handleEndInterview();
-        return;
-      }
-
-      const cleanedResponse = sanitizeAIOutput(data.response);
-      const aiMsg = { speaker: 'AI' as 'AI', text: cleanedResponse };
-      transcriptRef.current.push(aiMsg);
-      setTranscript([...transcriptRef.current]);
-
-      // Update candidateAnswers' latest question to whatever the AI asked
-      candidateAnswers.current.push({ q: cleanedResponse, a: '' });
-
-      await speak(cleanedResponse);
-
-      // Reset text and start listening purely for the candidate's answer
-      setCurrentAnswer('');
-      finalizedTextRef.current = '';
-      if (recognitionRef.current) {
-        try {
-          setIsListening(true);
-          recognitionRef.current.start();
-        } catch (e) { }
-      }
+      return await res.json();
     } catch (e) {
-      console.error(e);
+      console.error('[Interviewer] Error:', e);
+      return { response: 'I apologize, there was an issue. Let me continue.', isCompleted: false };
     }
   };
 
+  // ── Main flow: Ask the next question ─────────────────────────────
+  const askNextQuestion = async (currentTranscript = transcriptRef.current) => {
+    const data = await askInterviewer(currentTranscript);
+
+    if (data.isCompleted) {
+      setIsCompleted(true);
+      const cleanedResponse = sanitizeAIOutput(data.response);
+      const finalMsg = { speaker: 'AI' as 'AI', text: cleanedResponse };
+      transcriptRef.current.push(finalMsg);
+      setTranscript([...transcriptRef.current]);
+      await speak(cleanedResponse);
+      await handleEndInterview();
+      return;
+    }
+
+    const cleanedResponse = sanitizeAIOutput(data.response);
+    const aiMsg = { speaker: 'AI' as 'AI', text: cleanedResponse };
+    transcriptRef.current.push(aiMsg);
+    setTranscript([...transcriptRef.current]);
+
+    // Track the question
+    lastQuestionText.current = cleanedResponse;
+    isAwaitingFollowUp.current = false;
+    candidateAnswers.current.push({ q: cleanedResponse, a: '' });
+
+    // Track question index from the interviewer
+    if (data.currentQuestionIndex !== null && data.currentQuestionIndex !== undefined) {
+      questionIndex.current = data.currentQuestionIndex - 1; // Convert 1-based to 0-based
+    }
+
+    await speak(cleanedResponse);
+    startListening();
+  };
+
+  // ── Ask a follow-up (Evaluator 1 decided) ────────────────────────
+  const askFollowUp = async (followUpQuestion: string, currentTranscript: any[]) => {
+    const data = await askInterviewer(currentTranscript, followUpQuestion);
+
+    const cleanedResponse = sanitizeAIOutput(data.response);
+    const aiMsg = { speaker: 'AI' as 'AI', text: cleanedResponse };
+    transcriptRef.current.push(aiMsg);
+    setTranscript([...transcriptRef.current]);
+
+    isAwaitingFollowUp.current = true;
+    lastQuestionText.current = cleanedResponse;
+    questionsWithFollowUps.current += 1;
+
+    await speak(cleanedResponse);
+    startListening();
+  };
+
+  const startListening = () => {
+    setCurrentAnswer('');
+    finalizedTextRef.current = '';
+    if (recognitionRef.current) {
+      try {
+        setIsListening(true);
+        recognitionRef.current.start();
+      } catch (e) { }
+    }
+  };
+
+  // ── Submit answer → Evaluator 1 decides next step ────────────────
   const submitAnswer = async () => {
     if (recognitionRef.current) {
       setIsListening(false);
@@ -290,15 +341,56 @@ export default function InterviewRoom() {
 
     const finalAnswer = currentAnswer.trim() || '(No response audible)';
 
-    // Fill the answer for the last question the AI asked
-    if (candidateAnswers.current.length > 0) {
-      candidateAnswers.current[candidateAnswers.current.length - 1].a = finalAnswer;
-    }
-
+    // Add to transcript
     const candidateMsg = { speaker: 'Candidate' as 'Candidate', text: finalAnswer };
     transcriptRef.current.push(candidateMsg);
     setTranscript([...transcriptRef.current]);
 
+    // Fill the answer for the last question the AI asked
+    if (candidateAnswers.current.length > 0) {
+      const lastEntry = candidateAnswers.current[candidateAnswers.current.length - 1];
+      if (isAwaitingFollowUp.current) {
+        lastEntry.followUpAnswer = finalAnswer;
+      } else {
+        lastEntry.a = finalAnswer;
+      }
+    }
+
+    // ── Evaluator 1: Check key point coverage ─────────────────────
+    const keyPoints = getKeyPointsForQuestion(questionIndex.current);
+
+    if (keyPoints.length > 0 && questionIndex.current >= 0) {
+      // There are key points to check
+      const lastEntry = candidateAnswers.current[candidateAnswers.current.length - 1];
+      const originalQuestion = interview.question_bank[questionIndex.current]?.question || lastEntry.q;
+
+      const liveResult = await callLiveEvaluator(
+        originalQuestion,
+        lastEntry.a,
+        keyPoints,
+        isAwaitingFollowUp.current ? finalAnswer : undefined
+      );
+
+      console.log('[Evaluator 1] Decision:', liveResult.decision, 'Coverage:', liveResult.coverage_percentage);
+
+      // Track coverage
+      coveragePerQuestion.current.push({
+        questionIndex: questionIndex.current,
+        coverage: liveResult.coverage_percentage || 0,
+      });
+
+      if (liveResult.decision === 'follow_up' && !isAwaitingFollowUp.current && liveResult.follow_up_question) {
+        // Evaluator 1 says: ask a follow-up
+        if (lastEntry) lastEntry.followUp = liveResult.follow_up_question;
+        await askFollowUp(liveResult.follow_up_question, transcriptRef.current);
+        return;
+      }
+
+      // decision is 'move_next' or 'skip' or it was already a follow-up → proceed
+    }
+
+    // No key points to check, or Evaluator 1 said move on → ask next question
+    isAwaitingFollowUp.current = false;
     await askNextQuestion(transcriptRef.current);
   };
 
@@ -322,14 +414,30 @@ export default function InterviewRoom() {
   const handleEndInterview = async () => {
     setSavingStatus('Evaluating answers and saving video...');
 
-    // Stop capturing new audio/video data for the recording upload
     try { recognitionRef.current?.stop(); } catch (e) { }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
     }
 
-    // Evaluate via pure JSON Eval endpoint
-    let evaluationResult: { score?: number; feedback?: string; aspects?: any } = {};
+    // ── Prepare Evaluator 1 metrics for Evaluator 2 ─────────────
+    const totalQuestions = interview?.question_bank?.length || 1;
+    const coverages = coveragePerQuestion.current;
+    const avgCoverage = coverages.length > 0
+      ? coverages.reduce((sum, c) => sum + c.coverage, 0) / coverages.length
+      : 0;
+
+    const coverageData = {
+      average_coverage: avgCoverage,
+      per_question: coverages,
+    };
+
+    const followUpData = {
+      questions_with_follow_ups: questionsWithFollowUps.current,
+      total_questions: totalQuestions,
+    };
+
+    // ── Call Evaluator 2 (post-interview) ─────────────────────────
+    let evaluationResult: any = {};
     try {
       setSavingStatus('AI is evaluating your responses...');
       const res = await fetch('/api/evaluate', {
@@ -337,25 +445,26 @@ export default function InterviewRoom() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           questionBank: interview.question_bank,
-          previousContext: transcriptRef.current
+          previousContext: transcriptRef.current,
+          coverageData,
+          followUpData,
         })
       });
       const data = await res.json();
-      console.log('[Evaluate] API response:', data);
+      console.log('[Evaluator 2] API response:', data);
       if (data.evaluation) {
         evaluationResult = data.evaluation;
       } else {
-        console.error('[Evaluate] Missing evaluation field in response:', data);
+        console.error('[Evaluator 2] Missing evaluation field:', data);
       }
     } catch (e) {
-      console.error('[Evaluate] Fetch failed:', e);
+      console.error('[Evaluator 2] Fetch failed:', e);
     }
 
-    // Attempt video upload — wait for MediaRecorder to fully flush
+    // Attempt video upload
     let finalVideoUrl = '';
     if (mediaRecorderRef.current && recordedChunks.current.length > 0) {
       try {
-        // Wait for all chunks to be flushed via onstop
         await new Promise<void>(resolve => {
           if (!mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') {
             resolve();
@@ -372,12 +481,9 @@ export default function InterviewRoom() {
           .from('videos')
           .upload(fileName, videoBlob, { contentType: 'video/webm' });
 
-        console.log('[Video Upload] data:', uploadData, '| error:', uploadError);
-
         if (uploadData && !uploadError) {
           const { data: { publicUrl } } = supabase.storage.from('videos').getPublicUrl(fileName);
           finalVideoUrl = publicUrl;
-          console.log('[Video Upload] publicUrl:', publicUrl);
         }
       } catch (err) {
         console.error("Upload error", err);
@@ -395,7 +501,6 @@ export default function InterviewRoom() {
 
       setSavingStatus('Your results are saved securely.');
       sessionStorage.setItem('interview_done', 'true');
-      // Stop all media before refreshing so camera light turns off
       streamRef.current?.getTracks().forEach(t => t.stop());
       try { recognitionRef.current?.stop(); } catch (e) { }
       window.location.reload();
@@ -485,7 +590,7 @@ export default function InterviewRoom() {
                   <div className="flex items-start gap-3">
                     <CheckCircle2 size={20} className="text-green-400 mt-0.5 shrink-0" />
                     <p className="text-slate-200 text-sm leading-relaxed">
-                      <span className="font-semibold text-white">Clarification:</span> You can ask to repeat the question or request clarification if you don’t understand it. You can also say that you don’t know the answer if you're unsure.
+                      <span className="font-semibold text-white">Clarification:</span> You can ask to repeat the question or request clarification if you don't understand it. You can also say that you don't know the answer if you're unsure.
                     </p>
                   </div>
 

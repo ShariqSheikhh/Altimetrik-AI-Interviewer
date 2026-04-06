@@ -26,34 +26,99 @@ function sanitizeTranscript(entries: any[]): any[] {
   }));
 }
 
-function validateEvaluation(raw: any): any {
+// ── Scoring calculation ───────────────────────────────────────────────
+function calculateFinalScore(
+  rubricScores: { communication: number; relevance: number; problem_solving: number; specificity: number },
+  coveragePercentage: number,
+  questionsWithFollowUps: number,
+  totalQuestions: number
+): {
+  rubric_weighted: number;
+  coverage_weighted: number;
+  follow_up_penalty: number;
+  final_score: number;
+} {
+  // Rubric Score: 4 sub-categories × 25 = 100, weighted to 50%
+  const rubricTotal = clamp(rubricScores.communication, 0, 25)
+    + clamp(rubricScores.relevance, 0, 25)
+    + clamp(rubricScores.problem_solving, 0, 25)
+    + clamp(rubricScores.specificity, 0, 25);
+  const rubric_weighted = (rubricTotal / 100) * 50;
+
+  // Coverage Score: % of key points covered, weighted to 40%
+  const coverage_weighted = (clamp(coveragePercentage, 0, 100) / 100) * 40;
+
+  // Follow-up Penalty: proportional to how many questions needed follow-ups, max 10 pts
+  const followUpRatio = totalQuestions > 0 ? questionsWithFollowUps / totalQuestions : 0;
+  const follow_up_penalty = followUpRatio * 10;
+
+  const final_score = Math.round(Math.max(0, rubric_weighted + coverage_weighted - follow_up_penalty));
+
+  return { rubric_weighted: Math.round(rubric_weighted * 10) / 10, coverage_weighted: Math.round(coverage_weighted * 10) / 10, follow_up_penalty: Math.round(follow_up_penalty * 10) / 10, final_score };
+}
+
+function validateEvaluation(raw: any, coverageData: any, followUpData: any): any {
   const evaluation: any = {};
 
-  // Validate feedback
+  // Validate rubric feedback
   evaluation.feedback = typeof raw.feedback === 'string' ? raw.feedback : 'Evaluation completed.';
 
-  // Validate and clamp aspect scores
+  // Validate and clamp rubric aspect scores
   const defaultAspect = { score: 0, feedback: 'No evaluation available.' };
   const aspectKeys = ['communication', 'relevance', 'problem_solving', 'specificity'] as const;
 
-  evaluation.aspects = {};
+  evaluation.rubric_aspects = {};
   for (const key of aspectKeys) {
     const aspect = raw.aspects?.[key];
     if (aspect && typeof aspect === 'object') {
-      evaluation.aspects[key] = {
+      evaluation.rubric_aspects[key] = {
         score: clamp(typeof aspect.score === 'number' ? aspect.score : 0, 0, 25),
         feedback: typeof aspect.feedback === 'string' ? aspect.feedback : '',
       };
     } else {
-      evaluation.aspects[key] = { ...defaultAspect };
+      evaluation.rubric_aspects[key] = { ...defaultAspect };
     }
   }
 
-  // Calculate total score from clamped aspect scores
-  evaluation.score = aspectKeys.reduce(
-    (sum, key) => sum + evaluation.aspects[key].score,
-    0
-  );
+  // Get coverage data from the live evaluator metrics
+  const avgCoverage = coverageData.average_coverage || 0;
+  const questionsWithFollowUps = followUpData.questions_with_follow_ups || 0;
+  const totalQuestions = followUpData.total_questions || 1;
+
+  // Calculate final weighted scores
+  const rubricScores = {
+    communication: evaluation.rubric_aspects.communication.score,
+    relevance: evaluation.rubric_aspects.relevance.score,
+    problem_solving: evaluation.rubric_aspects.problem_solving.score,
+    specificity: evaluation.rubric_aspects.specificity.score,
+  };
+
+  const scoring = calculateFinalScore(rubricScores, avgCoverage, questionsWithFollowUps, totalQuestions);
+
+  evaluation.scoring = {
+    rubric_score: {
+      raw_total: rubricScores.communication + rubricScores.relevance + rubricScores.problem_solving + rubricScores.specificity,
+      weighted: scoring.rubric_weighted,
+      max: 50,
+      description: 'Communication, Relevance, Problem-Solving, Specificity (0-25 each), weighted to 50%',
+    },
+    coverage_score: {
+      percentage: Math.round(avgCoverage),
+      weighted: scoring.coverage_weighted,
+      max: 40,
+      description: '% of key points covered across primary + follow-up answers',
+      per_question: coverageData.per_question || [],
+    },
+    follow_up_penalty: {
+      questions_needing_follow_ups: questionsWithFollowUps,
+      total_questions: totalQuestions,
+      penalty: scoring.follow_up_penalty,
+      max: 10,
+      description: 'Deducted if key points only emerged after repeated probing',
+    },
+  };
+
+  evaluation.score = scoring.final_score;
 
   return evaluation;
 }
@@ -61,7 +126,7 @@ function validateEvaluation(raw: any): any {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { questionBank, previousContext } = body;
+    const { questionBank, previousContext, coverageData, followUpData } = body;
 
     // ── Input validation ──────────────────────────────────────────
     if (!Array.isArray(questionBank) || questionBank.length === 0) {
@@ -79,31 +144,36 @@ export async function POST(req: Request) {
 
     const sanitizedTranscript = sanitizeTranscript(previousContext);
 
-    // Build questions — send ONLY question text, never the answer
+    // Build questions with expected answers for rubric evaluation
     const questionsForEval = questionBank.map((q: any, i: number) => {
       const questionText = typeof q === 'string' ? q : q.question || '';
-      return `${i + 1}. ${questionText}`;
-    }).join('\n');
+      const answerText = typeof q === 'string' ? '' : q.answer || '';
+      return `${i + 1}. Question: ${questionText}\n   Expected Answer: ${answerText}`;
+    }).join('\n\n');
 
     const prompt = `
-      You are an expert Interview Evaluator.
-      Here is the candidate's interview transcript.
+      You are an expert Interview Evaluator (Evaluator 2 — Final Scoring).
+      Your job is to evaluate the candidate's OVERALL performance based on RUBRIC criteria.
 
-      Questions they were supposed to be asked:
+      ## Questions and Expected Answers:
       ${questionsForEval}
 
-      Actual Conversation / Candidate's Answers:
+      ## Full Interview Transcript:
       ${JSON.stringify(sanitizedTranscript, null, 2)}
 
-      Please meticulously evaluate the candidate's performance based on the following 4 aspects:
-      1. Communication Clarity (25 points): Logical flow, sentence structure, and ability to convey ideas without ambiguity or contradiction.
-      2. Relevance & Depth of Response (25 points): How directly the answer addresses the question, with substantive insight rather than surface-level filler.
-      3. Problem-Solving & Critical Thinking (25 points): Reasoning through scenarios, weighing trade-offs, and arriving at well-justified conclusions.
-      4. Specificity & Use of Examples (25 points): Backing claims with concrete examples, data, or past experiences rather than vague generalities.
+      ## Your Task — Rubric Evaluation
+      Evaluate the candidate across these 4 rubric criteria:
+
+      1. **Communication Clarity (0-25)**: Logical flow, sentence structure, and ability to convey ideas without ambiguity or contradiction.
+      2. **Relevance & Depth of Response (0-25)**: How directly the answer addresses the question, with substantive insight rather than surface-level filler.
+      3. **Problem-Solving & Critical Thinking (0-25)**: Reasoning through scenarios, weighing trade-offs, and arriving at well-justified conclusions.
+      4. **Specificity & Use of Examples (0-25)**: Backing claims with concrete examples, data, or past experiences rather than vague generalities.
+
+      Compare the candidate's answers against the expected answers to judge quality.
 
       You MUST return your evaluation strictly as a JSON object matching this exact schema, without any markdown formatting wrappers or extra text:
       {
-        "feedback": "<detailed overall text feedback explaining the score and summarizing the performance>",
+        "feedback": "<detailed overall text feedback explaining the performance>",
         "aspects": {
           "communication": { "score": <number 0-25>, "feedback": "<reasoning>" },
           "relevance": { "score": <number 0-25>, "feedback": "<reasoning>" },
@@ -138,13 +208,25 @@ export async function POST(req: Request) {
 
     const response = await bedrockClient.send(command);
     const responseBody = JSON.parse(new TextDecoder().decode(response.body));
-    const text = responseBody.output?.message?.content?.[0]?.text || '{}';
+    let text = responseBody.output?.message?.content?.[0]?.text || '{}';
+
+    // Strip markdown wrappers
+    if (text.trimStart().startsWith('```json')) {
+      text = text.replace(/^[\s]*```json\s*/, '').replace(/\s*```[\s]*$/, '');
+    } else if (text.trimStart().startsWith('```')) {
+      text = text.replace(/^[\s]*```\s*/, '').replace(/\s*```[\s]*$/, '');
+    }
 
     let evaluation;
     try {
       const parsed = JSON.parse(text);
-      evaluation = validateEvaluation(parsed);
+      evaluation = validateEvaluation(
+        parsed,
+        coverageData || { average_coverage: 0, per_question: [] },
+        followUpData || { questions_with_follow_ups: 0, total_questions: questionBank.length }
+      );
     } catch (e) {
+      console.error('[Evaluate] Parse error:', e);
       evaluation = { score: 0, feedback: text };
     }
 
