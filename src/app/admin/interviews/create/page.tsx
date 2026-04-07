@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import * as XLSX from 'xlsx';
+import * as ExcelJS from 'exceljs';
 import { Upload, Plus, FileSpreadsheet, Loader2, ArrowLeft, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -15,73 +15,98 @@ export default function CreateTest() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const data = new Uint8Array(event.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: 'array' });
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        const json = XLSX.utils.sheet_to_json(worksheet) as any[];
-        
-        // Assume Excel has headers: Email, Name
-        const parsed = json.map(row => ({
-          email: row.Email || row.email,
-          name: row.Name || row.name || 'Candidate',
-          // Generate a passkey
-          passkey: Math.random().toString(36).slice(-8).toUpperCase()
-        })).filter(c => c.email);
-        
-        setCandidates(parsed);
-      } catch (err) {
-        setError('Failed to parse Excel file. Ensure it has Email columns.');
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(buffer);
+      const worksheet = workbook.worksheets[0];
+      
+      if (!worksheet) {
+        setError('No worksheet found in Excel file.');
+        return;
       }
-    };
-    reader.readAsArrayBuffer(file);
+
+      const parsed: any[] = [];
+      worksheet.eachRow((row, rowNumber) => {
+        if (rowNumber === 1) return; // Skip header row
+        const email = row.getCell(1).value;
+        const name = row.getCell(2).value;
+        if (email) {
+          parsed.push({
+            email: String(email),
+            name: name ? String(name) : 'Candidate',
+            passkey: Math.random().toString(36).slice(-8).toUpperCase()
+          });
+        }
+      });
+
+      setCandidates(parsed.filter(c => c.email));
+    } catch (err) {
+      setError('Failed to parse Excel file. Ensure it has Email columns.');
+    }
   };
 
-  const handleQuestionUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleQuestionUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const data = new Uint8Array(event.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: 'array' });
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        const json = XLSX.utils.sheet_to_json(worksheet) as any[];
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(buffer);
+      const worksheet = workbook.worksheets[0];
 
-        // Assume Excel has headers: Question, Answer, KeyPoints
-        const parsed = json.map(row => {
-          const keyPointsRaw = row.KeyPoints || row.keypoints || row.key_points || row.Keypoints || '';
-          const keyPoints = typeof keyPointsRaw === 'string'
-            ? keyPointsRaw.split(';').map((kp: string) => kp.trim()).filter((kp: string) => kp)
-            : [];
-          return {
-            question: row.Question || row.question || '',
-            answer: row.Answer || row.answer || '',
-            key_points: keyPoints,
-          };
-        }).filter(q => q.question.trim());
-
-        if (parsed.length > 0) {
-          if (questions.length === 1 && !questions[0].question) {
-            setQuestions(parsed);
-          } else {
-            setQuestions([...questions, ...parsed]);
-          }
-        }
-      } catch (err) {
-        setError('Failed to parse Excel file. Ensure it has Question, Answer, and KeyPoints columns.');
+      if (!worksheet) {
+        setError('No worksheet found in Excel file.');
+        return;
       }
-    };
-    reader.readAsArrayBuffer(file);
+
+      const parsed: any[] = [];
+      let headerRow: any = null;
+      
+      worksheet.eachRow((row, rowNumber) => {
+        if (rowNumber === 1) {
+          // Store header row to map column names
+          headerRow = {};
+          row.eachCell((cell, colNumber) => {
+            headerRow[colNumber] = String(cell.value || '').toLowerCase();
+          });
+          return;
+        }
+
+        const questionCol = Object.entries(headerRow).find(([_, val]) => val === 'question')?.[0];
+        const answerCol = Object.entries(headerRow).find(([_, val]) => val === 'answer')?.[0];
+        const keyPointsCol = Object.entries(headerRow).find(([_, val]) => 
+          val === 'keypoints' || val === 'key_points'
+        )?.[0];
+
+        const question = questionCol ? String(row.getCell(Number(questionCol)).value || '') : '';
+        const answer = answerCol ? String(row.getCell(Number(answerCol)).value || '') : '';
+        const keyPointsRaw = keyPointsCol ? row.getCell(Number(keyPointsCol)).value : '';
+        
+        const keyPoints = typeof keyPointsRaw === 'string'
+          ? keyPointsRaw.split(';').map((kp: string) => kp.trim()).filter((kp: string) => kp)
+          : [];
+
+        if (question.trim()) {
+          parsed.push({ question, answer, key_points: keyPoints });
+        }
+      });
+
+      if (parsed.length > 0) {
+        if (questions.length === 1 && !questions[0].question) {
+          setQuestions(parsed);
+        } else {
+          setQuestions([...questions, ...parsed]);
+        }
+      }
+    } catch (err) {
+      setError('Failed to parse Excel file. Ensure it has Question, Answer, and KeyPoints columns.');
+    }
   };
 
   const handleSave = async () => {
