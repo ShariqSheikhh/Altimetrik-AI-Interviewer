@@ -40,7 +40,7 @@ export default function InterviewRoom() {
   // ── Evaluator 1 tracking ──────────────────────────────────────────
   const coveragePerQuestion = useRef<{ questionIndex: number, coverage: number }[]>([]);
   const questionsWithFollowUps = useRef<number>(0);
-  const isAwaitingFollowUp = useRef(false);
+  const followUpCountForCurrentQ = useRef(0);  // how many follow-ups asked for current question
   const lastQuestionText = useRef('');
 
   useEffect(() => {
@@ -216,6 +216,12 @@ export default function InterviewRoom() {
       .trim();
   };
 
+  // ── Get follow_up_depth for current question ─────────────────────
+  const getFollowUpDepth = (qIndex: number): number => {
+    if (!interview?.question_bank || qIndex < 0 || qIndex >= interview.question_bank.length) return 2;
+    return interview.question_bank[qIndex]?.follow_up_depth ?? 2;
+  };
+
   // ── Get key points for a question (from question bank) ───────────
   const getKeyPointsForQuestion = (qIndex: number): string[] => {
     if (!interview?.question_bank || qIndex < 0 || qIndex >= interview.question_bank.length) {
@@ -292,7 +298,7 @@ export default function InterviewRoom() {
 
     // Track the question
     lastQuestionText.current = cleanedResponse;
-    isAwaitingFollowUp.current = false;
+    followUpCountForCurrentQ.current = 0;  // reset follow-up counter for new question
     candidateAnswers.current.push({ q: cleanedResponse, a: '' });
 
     // Track question index from the interviewer
@@ -313,9 +319,10 @@ export default function InterviewRoom() {
     transcriptRef.current.push(aiMsg);
     setTranscript([...transcriptRef.current]);
 
-    isAwaitingFollowUp.current = true;
-    lastQuestionText.current = cleanedResponse;
-    questionsWithFollowUps.current += 1;
+    if (followUpCountForCurrentQ.current === 0) {
+      questionsWithFollowUps.current += 1;
+    }
+    followUpCountForCurrentQ.current += 1;
 
     await speak(cleanedResponse);
     startListening();
@@ -349,7 +356,7 @@ export default function InterviewRoom() {
     // Fill the answer for the last question the AI asked
     if (candidateAnswers.current.length > 0) {
       const lastEntry = candidateAnswers.current[candidateAnswers.current.length - 1];
-      if (isAwaitingFollowUp.current) {
+      if (followUpCountForCurrentQ.current > 0) {
         lastEntry.followUpAnswer = finalAnswer;
       } else {
         lastEntry.a = finalAnswer;
@@ -368,7 +375,7 @@ export default function InterviewRoom() {
         originalQuestion,
         lastEntry.a,
         keyPoints,
-        isAwaitingFollowUp.current ? finalAnswer : undefined
+        followUpCountForCurrentQ.current > 0 ? finalAnswer : undefined
       );
 
       console.log('[Evaluator 1] Decision:', liveResult.decision, 'Coverage:', liveResult.coverage_percentage);
@@ -379,8 +386,11 @@ export default function InterviewRoom() {
         coverage: liveResult.coverage_percentage || 0,
       });
 
-      if (liveResult.decision === 'follow_up' && !isAwaitingFollowUp.current && liveResult.follow_up_question) {
-        // Evaluator 1 says: ask a follow-up
+      const maxFollowUps = getFollowUpDepth(questionIndex.current);
+      const canAskFollowUp = followUpCountForCurrentQ.current < maxFollowUps;
+
+      if (liveResult.decision === 'follow_up' && canAskFollowUp && liveResult.follow_up_question) {
+        // Evaluator 1 says: ask a follow-up (within allowed depth)
         if (lastEntry) lastEntry.followUp = liveResult.follow_up_question;
         await askFollowUp(liveResult.follow_up_question, transcriptRef.current);
         return;
@@ -389,8 +399,8 @@ export default function InterviewRoom() {
       // decision is 'move_next' or 'skip' or it was already a follow-up → proceed
     }
 
-    // No key points to check, or Evaluator 1 said move on → ask next question
-    isAwaitingFollowUp.current = false;
+    // No key points, or Evaluator 1 said move on / max follow-ups reached → next question
+    followUpCountForCurrentQ.current = 0;
     await askNextQuestion(transcriptRef.current);
   };
 

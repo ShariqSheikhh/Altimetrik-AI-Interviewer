@@ -10,7 +10,7 @@ import Link from 'next/link';
 export default function CreateTest() {
   const router = useRouter();
   const [title, setTitle] = useState('');
-  const [questions, setQuestions] = useState<{question: string, answer: string, key_points: string[]}[]>([{question: '', answer: '', key_points: []}]);
+  const [questions, setQuestions] = useState<{sl_no?: number, category?: string, question: string, answer: string, key_points: string[], follow_up_depth?: number}[]>([{question: '', answer: '', key_points: [], follow_up_depth: 2}]);
   const [candidates, setCandidates] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -66,35 +66,62 @@ export default function CreateTest() {
       }
 
       const parsed: any[] = [];
-      let headerRow: any = null;
-      
+      let headerMap: Record<number, string> = {};
+
       worksheet.eachRow((row, rowNumber) => {
         if (rowNumber === 1) {
-          // Store header row to map column names
-          headerRow = {};
+          // Build header map: colNumber → normalized header name
           row.eachCell((cell, colNumber) => {
-            headerRow[colNumber] = String(cell.value || '').toLowerCase();
+            headerMap[colNumber] = String(cell.value || '').toLowerCase().trim();
           });
           return;
         }
 
-        const questionCol = Object.entries(headerRow).find(([_, val]) => val === 'question')?.[0];
-        const answerCol = Object.entries(headerRow).find(([_, val]) => val === 'answer')?.[0];
-        const keyPointsCol = Object.entries(headerRow).find(([_, val]) => 
-          val === 'keypoints' || val === 'key_points'
-        )?.[0];
+        // Helper to get cell value by header name
+        const getCol = (name: string) => {
+          const col = Object.entries(headerMap).find(([_, v]) => v === name)?.[0];
+          return col ? String(row.getCell(Number(col)).value ?? '').trim() : '';
+        };
 
-        const question = questionCol ? String(row.getCell(Number(questionCol)).value || '') : '';
-        const answer = answerCol ? String(row.getCell(Number(answerCol)).value || '') : '';
-        const keyPointsRaw = keyPointsCol ? row.getCell(Number(keyPointsCol)).value : '';
-        
-        const keyPoints = typeof keyPointsRaw === 'string'
-          ? keyPointsRaw.split(';').map((kp: string) => kp.trim()).filter((kp: string) => kp)
-          : [];
+        const question = getCol('question');
+        if (!question) return;
 
-        if (question.trim()) {
-          parsed.push({ question, answer, key_points: keyPoints });
+        // Collect up to 5 coverage points from separate columns
+        const keyPoints: string[] = [];
+        for (let n = 1; n <= 5; n++) {
+          // Matches: "coverage point 1", "coverage point1", "coveragepoint1"
+          const colEntry = Object.entries(headerMap).find(([_, v]) =>
+            v === `coverage point ${n}` || v === `coverage point${n}` || v === `coveragepoint${n}`
+          );
+          if (colEntry) {
+            const val = String(row.getCell(Number(colEntry[0])).value ?? '').trim();
+            if (val) keyPoints.push(val);
+          }
         }
+
+        // Fallback: if no coverage point columns found, try KeyPoints (semicolon-separated)
+        if (keyPoints.length === 0) {
+          const kpCol = Object.entries(headerMap).find(([_, v]) =>
+            v === 'keypoints' || v === 'key_points' || v === 'key points'
+          )?.[0];
+          if (kpCol) {
+            const raw = String(row.getCell(Number(kpCol)).value ?? '');
+            raw.split(';').map(k => k.trim()).filter(Boolean).forEach(k => keyPoints.push(k));
+          }
+        }
+
+        const category = getCol('category');
+        const slNoRaw = getCol('sl no') || getCol('sl.no') || getCol('slno') || getCol('s.no') || getCol('sno');
+        const followUpDepthRaw = getCol('follow_up_depth') || getCol('follow up depth') || getCol('followupdepth');
+
+        parsed.push({
+          sl_no: slNoRaw ? Number(slNoRaw) : undefined,
+          category: category || undefined,
+          question,
+          answer: getCol('answer'), // optional, may be empty
+          key_points: keyPoints,
+          follow_up_depth: followUpDepthRaw ? Number(followUpDepthRaw) : 2,
+        });
       });
 
       if (parsed.length > 0) {
@@ -103,9 +130,12 @@ export default function CreateTest() {
         } else {
           setQuestions([...questions, ...parsed]);
         }
+        setError('');
+      } else {
+        setError('No questions found. Ensure the sheet has a "Question" column and at least one "Coverage point" column.');
       }
     } catch (err) {
-      setError('Failed to parse Excel file. Ensure it has Question, Answer, and KeyPoints columns.');
+      setError('Failed to parse Excel file. Check the column structure and try again.');
     }
   };
 
@@ -193,7 +223,7 @@ export default function CreateTest() {
                 </label>
 
                 <button 
-                  onClick={() => setQuestions([...questions, {question: '', answer: '', key_points: []}])}
+                  onClick={() => setQuestions([...questions, {question: '', answer: '', key_points: [], follow_up_depth: 2}])}
                   className="text-sm bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 px-4 py-2 rounded-xl transition-colors flex items-center gap-2"
                 >
                   <Plus size={16} /> Add 
@@ -201,7 +231,7 @@ export default function CreateTest() {
               </div>
             </div>
             
-            <p className="text-sm text-slate-400 mb-4">Upload an Excel file (.xlsx) with columns: Question, Answer, KeyPoints (semicolon-separated).</p>
+            <p className="text-sm text-slate-400 mb-4">Upload an Excel file (.xlsx) with columns: <span className="text-white font-medium">Sl No, Category, Question, Coverage point 1–5, follow_up_depth</span>. Coverage points are read from separate columns automatically.</p>
             <div className="space-y-4">
               {questions.map((q, i) => (
                 <div key={i} className="flex items-start gap-4">
