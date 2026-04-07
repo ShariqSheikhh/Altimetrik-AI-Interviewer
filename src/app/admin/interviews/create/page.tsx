@@ -33,8 +33,8 @@ export default function CreateTest() {
       const parsed: any[] = [];
       worksheet.eachRow((row, rowNumber) => {
         if (rowNumber === 1) return; // Skip header row
-        const email = row.getCell(1).value;
-        const name = row.getCell(2).value;
+        const name = row.getCell(1).value;
+        const email = row.getCell(2).value;
         if (email) {
           parsed.push({
             email: String(email),
@@ -46,7 +46,7 @@ export default function CreateTest() {
 
       setCandidates(parsed.filter(c => c.email));
     } catch (err) {
-      setError('Failed to parse Excel file. Ensure it has Email columns.');
+      setError('Failed to parse Excel file. Ensure it has Name and Email columns.');
     }
   };
 
@@ -291,7 +291,7 @@ export default function CreateTest() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-6">
               <div>
                 <h2 className="text-xl font-semibold mb-1">Allowed Candidates</h2>
-                <p className="text-sm text-slate-400">Upload an Excel file (.xlsx) with columns: Email, Name.</p>
+                <p className="text-sm text-slate-400">Upload an Excel file (.xlsx) with columns: Name, Email.</p>
               </div>
               <label className="cursor-pointer bg-black/50 hover:bg-black border border-white/10 hover:border-blue-500 px-6 py-4 rounded-2xl flex items-center gap-3 transition-colors shrink-0">
                 <FileSpreadsheet className="text-blue-400" size={24} />
