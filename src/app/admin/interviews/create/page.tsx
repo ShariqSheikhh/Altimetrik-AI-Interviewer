@@ -30,15 +30,25 @@ export default function CreateTest() {
         return;
       }
 
+      // Helper: ExcelJS returns hyperlinked cells (like emails) as objects
+      // e.g. { text: 'user@email.com', hyperlink: 'mailto:user@email.com' }
+      const getCellText = (cellValue: any): string => {
+        if (!cellValue) return '';
+        if (typeof cellValue === 'string') return cellValue.trim();
+        if (typeof cellValue === 'object' && cellValue.text) return String(cellValue.text).trim();
+        if (typeof cellValue === 'object' && cellValue.result) return String(cellValue.result).trim();
+        return String(cellValue).trim();
+      };
+
       const parsed: any[] = [];
       worksheet.eachRow((row, rowNumber) => {
         if (rowNumber === 1) return; // Skip header row
-        const name = row.getCell(1).value;
-        const email = row.getCell(2).value;
+        const name = getCellText(row.getCell(1).value);
+        const email = getCellText(row.getCell(2).value);
         if (email) {
           parsed.push({
-            email: String(email),
-            name: name ? String(name) : 'Candidate',
+            email,
+            name: name || 'Candidate',
             passkey: Math.random().toString(36).slice(-8).toUpperCase()
           });
         }
