@@ -484,19 +484,34 @@ export default function InterviewRoom() {
         });
         setSavingStatus('Uploading session recording...');
         const videoBlob = new Blob(recordedChunks.current, { type: 'video/webm' });
-        const fileName = `interview-${interview.id}-candidate-${candidate.id}-${Date.now()}.webm`;
+        const fileName = `videos/interview-${interview.id}-candidate-${candidate.id}-${Date.now()}.webm`;
 
-        const { data: uploadData, error: uploadError } = await supabase
-          .storage
-          .from('videos')
-          .upload(fileName, videoBlob, { contentType: 'video/webm' });
+        // Request Pre-signed S3 URL
+        const presignRes = await fetch('/api/s3-presign', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'upload', fileName, fileType: 'video/webm' })
+        });
+        const presignData = await presignRes.json();
 
-        if (uploadData && !uploadError) {
-          const { data: { publicUrl } } = supabase.storage.from('videos').getPublicUrl(fileName);
-          finalVideoUrl = publicUrl;
+        if (presignData.signedUrl) {
+          // Upload to S3 directly
+          const uploadRes = await fetch(presignData.signedUrl, {
+            method: 'PUT',
+            body: videoBlob,
+            headers: { 'Content-Type': 'video/webm' }
+          });
+          
+          if (uploadRes.ok) {
+            finalVideoUrl = `s3://${fileName}`;
+          } else {
+            console.error("[Video Upload] S3 error:", uploadRes.statusText);
+          }
+        } else {
+          console.error("[Video Upload] S3 presign error:", presignData.error);
         }
       } catch (err) {
-        console.error("Upload error", err);
+        console.error("[Video Upload] Exception catch:", err);
       }
     }
 

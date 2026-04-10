@@ -10,6 +10,7 @@ export default function ResultDetails() {
   const params = useParams();
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [videoSrc, setVideoSrc] = useState<string | null>(null);
 
   useEffect(() => {
     if (!params.id) return;
@@ -25,7 +26,25 @@ export default function ResultDetails() {
         .eq('id', params.id as string)
         .single();
         
-      if (data) setResult(data);
+      if (data) {
+        setResult(data);
+        if (data.video_url?.startsWith('s3://')) {
+          const fileName = data.video_url.replace('s3://', '');
+          try {
+            const presignRes = await fetch('/api/s3-presign', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'get', fileName })
+            });
+            const pData = await presignRes.json();
+            if (pData.signedUrl) setVideoSrc(pData.signedUrl);
+          } catch (e) {
+            console.error('Failed to pre-sign S3 URL', e);
+          }
+        } else {
+          setVideoSrc(data.video_url);
+        }
+      }
       setLoading(false);
     };
 
@@ -150,11 +169,11 @@ export default function ResultDetails() {
                     <ShieldAlert size={48} className="mb-4 opacity-50 text-red-400" />
                     <p className="font-semibold text-white">Video Recording Not Found</p>
                     <p className="text-sm mt-2 max-w-sm">
-                      The video failed to upload. Please ensure you have created a public Storage Bucket named <code className="bg-black/50 px-1 rounded text-blue-400 border border-white/10">videos</code> in Supabase and added an INSERT policy for anon users.
+                      The video failed to upload. Please ensure you have created an S3 Bucket and configured the AWS Environment Variables.
                     </p>
                   </div>
                 ) : (
-                  <video src={result.video_url} controls className="w-full h-full" />
+                  <video src={videoSrc || undefined} controls className="w-full h-full" />
                 )}
               </div>
             </div>
