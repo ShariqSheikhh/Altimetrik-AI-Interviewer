@@ -63,7 +63,7 @@ The project uses native browser APIs for speech to ensure low latency and zero a
 ### AI Interviewer API (`/api/interviewer`)
 The interviewer operates as a **stateless agent**. The entire conversation history and current step (Greeting, Introduction, Question Index) are passed back and forth between the client and the AWS Bedrock API in a `state` object.
 
-**AI Model:** `amazon.nova-lite-v1:0` (configurable via `AWS_MODEL_NAME` env var)
+**AI Model:** `amazon.nova-lite-v1:0` (configurable via `MODEL_NAME` env var)
 
 **SDK:** `@aws-sdk/client-bedrock-runtime` with `InvokeModelCommand`
 

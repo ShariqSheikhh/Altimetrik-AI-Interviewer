@@ -2,14 +2,14 @@ import { NextResponse } from 'next/server';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 
 const bedrockClient = new BedrockRuntimeClient({
-  region: process.env.AWS_REGION || 'us-east-1',
+  region: process.env.REGION || 'us-east-1',
   credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+    accessKeyId: process.env.ACCESS_KEY_ID || '',
+    secretAccessKey: process.env.SECRET_ACCESS_KEY || '',
   },
 });
 
-const MODEL_ID = process.env.AWS_MODEL_NAME || 'amazon.nova-lite-v1:0';
+const MODEL_ID = process.env.MODEL_NAME || 'amazon.nova-lite-v1:0';
 
 // ── Guardrails ────────────────────────────────────────────────────────
 const MAX_TRANSCRIPT_ENTRIES = 200;
@@ -136,7 +136,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid or empty transcript' }, { status: 400 });
     }
 
-    if (!process.env.AWS_ACCESS_KEY_ID) {
+    if (!process.env.ACCESS_KEY_ID) {
       return NextResponse.json({
         evaluation: { score: 0, feedback: "AWS credentials not configured." }
       });
