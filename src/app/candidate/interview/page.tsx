@@ -207,7 +207,10 @@ export default function InterviewRoom() {
   };
 
   // ── Client-side output sanitization ──────────────────────────────
-  const sanitizeAIOutput = (text: string): string => {
+  const sanitizeAIOutput = (text: string | undefined | null): string => {
+    if (!text || typeof text !== 'string') {
+      return 'I apologize, there was an issue connecting to the AI interviewer. Please try again.';
+    }
     return text
       .replace(/\[INTERVIEW_ENDED\]/g, '')
       .replace(/^AI:\s*/i, '')
@@ -269,7 +272,21 @@ export default function InterviewRoom() {
           ...(followUpInstruction ? { followUpInstruction } : {}),
         }),
       });
-      return await res.json();
+
+      if (!res.ok) {
+        console.error('[Interviewer] HTTP error:', res.status, res.statusText);
+        return { response: 'I apologize, there was a connection issue. Let me continue.', isCompleted: false };
+      }
+
+      const data = await res.json();
+
+      // Check if API returned an error field
+      if (data.error) {
+        console.error('[Interviewer] API error:', data.error);
+        return { response: 'I apologize, there was an error processing your response. Let me continue.', isCompleted: false };
+      }
+
+      return data;
     } catch (e) {
       console.error('[Interviewer] Error:', e);
       return { response: 'I apologize, there was an issue. Let me continue.', isCompleted: false };
@@ -471,32 +488,60 @@ export default function InterviewRoom() {
       console.error('[Evaluator 2] Fetch failed:', e);
     }
 
-    // Attempt video upload
+    // Upload video to S3 via server-side proxy (browser → Next.js API → S3)
+    // This avoids the CORS restriction of uploading directly from the browser to S3.
     let finalVideoUrl = '';
     if (mediaRecorderRef.current && recordedChunks.current.length > 0) {
       try {
+        // Wait for MediaRecorder to stop and flush all chunks
         await new Promise<void>(resolve => {
           if (!mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') {
             resolve();
           } else {
             mediaRecorderRef.current.onstop = () => resolve();
+            setTimeout(resolve, 3000); // safety timeout
           }
         });
+        // Small delay to ensure all ondataavailable events have fired
+        await new Promise(r => setTimeout(r, 300));
+
         setSavingStatus('Uploading session recording...');
         const videoBlob = new Blob(recordedChunks.current, { type: 'video/webm' });
-        const fileName = `interview-${interview.id}-candidate-${candidate.id}-${Date.now()}.webm`;
 
-        const { data: uploadData, error: uploadError } = await supabase
-          .storage
-          .from('videos')
-          .upload(fileName, videoBlob, { contentType: 'video/webm' });
+        if (videoBlob.size === 0) {
+          console.warn('[Upload] Video blob is empty, skipping upload');
+        } else {
+          // Send the video blob to our Next.js API route as multipart/form-data.
+          // The server will forward it to S3, bypassing CORS entirely.
+          const fileName = `${candidate.id}-${Date.now()}.webm`;
+          const formData = new FormData();
+          formData.append('file', videoBlob, fileName);
+          formData.append('fileName', fileName);
 
-        if (uploadData && !uploadError) {
-          const { data: { publicUrl } } = supabase.storage.from('videos').getPublicUrl(fileName);
-          finalVideoUrl = publicUrl;
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 5 * 60 * 1000); // 5 min timeout
+
+          const uploadRes = await fetch('/api/upload-video', {
+            method: 'POST',
+            body: formData,
+            signal: controller.signal,
+          }).finally(() => clearTimeout(timer));
+
+          const uploadData = await uploadRes.json();
+
+          if (uploadRes.ok && uploadData.publicUrl) {
+            finalVideoUrl = uploadData.publicUrl;
+            console.log('[Upload] Success:', finalVideoUrl);
+          } else {
+            console.error('[Upload] API returned error:', uploadData);
+          }
         }
-      } catch (err) {
-        console.error("Upload error", err);
+      } catch (err: any) {
+        if (err?.name === 'AbortError') {
+          console.error('[Upload] Timed out after 5 minutes — interview results will still be saved without video.');
+        } else {
+          console.error('[Upload] Error:', err);
+        }
       }
     }
 

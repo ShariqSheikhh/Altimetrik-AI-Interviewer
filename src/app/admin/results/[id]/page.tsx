@@ -10,6 +10,7 @@ export default function ResultDetails() {
   const params = useParams();
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [videoError, setVideoError] = useState(false);
 
   useEffect(() => {
     if (!params.id) return;
@@ -43,6 +44,19 @@ export default function ResultDetails() {
   const score = result.evaluation?.score || 0;
   const scoring = result.evaluation?.scoring;
   const isGoodScore = score >= 60;
+
+  // Convert an S3 public URL to our server-side proxy URL.
+  // This avoids the need for a public bucket policy or CORS on S3.
+  const getProxyVideoUrl = (s3Url: string): string => {
+    try {
+      const url = new URL(s3Url);
+      // pathname is like /interview-videos/xxx.webm
+      const key = url.pathname.replace(/^\//, '');
+      return `/api/video-stream?key=${encodeURIComponent(key)}`;
+    } catch {
+      return s3Url; // fallback to original if URL parsing fails
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#0a0f1c] text-white p-6 md:p-8 selection:bg-blue-500/30">
@@ -145,16 +159,57 @@ export default function ResultDetails() {
                 <Video size={18} className="text-blue-400" /> Session Recording
               </div>
               <div className="aspect-video bg-black relative flex items-center justify-center">
-                {result.video_url === 'mock_video_playback_feature_coming_soon.mp4' || !result.video_url ? (
-                  <div className="text-center text-slate-500 flex flex-col items-center">
+                {!result.video_url ? (
+                  <div className="text-center text-slate-500 flex flex-col items-center p-6">
                     <ShieldAlert size={48} className="mb-4 opacity-50 text-red-400" />
                     <p className="font-semibold text-white">Video Recording Not Found</p>
                     <p className="text-sm mt-2 max-w-sm">
-                      The video failed to upload. Please ensure you have created a public Storage Bucket named <code className="bg-black/50 px-1 rounded text-blue-400 border border-white/10">videos</code> in Supabase and added an INSERT policy for anon users.
+                      The video failed to upload or was not recorded. Check AWS S3 bucket configuration, CORS settings, and candidate's browser permissions.
                     </p>
                   </div>
+                ) : videoError ? (
+                  <div className="text-center text-slate-500 flex flex-col items-center p-6">
+                    <ShieldAlert size={48} className="mb-4 opacity-50 text-amber-400" />
+                    <p className="font-semibold text-white">Video Could Not Be Played</p>
+                    <p className="text-sm mt-2 max-w-sm text-slate-400">
+                      The video could not be streamed. Try opening it directly.
+                    </p>
+                    <a
+                      href={getProxyVideoUrl(result.video_url)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-4 px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold rounded-full transition-colors"
+                    >
+                      Open Video in New Tab
+                    </a>
+                  </div>
                 ) : (
-                  <video src={result.video_url} controls className="w-full h-full" />
+                  <div className="w-full h-full flex flex-col">
+                    <video
+                      key={result.video_url}
+                      src={getProxyVideoUrl(result.video_url)}
+                      controls
+                      className="w-full h-full"
+                      preload="metadata"
+                      onError={() => {
+                        console.error('[Video] Failed to stream:', result.video_url);
+                        setVideoError(true);
+                      }}
+                    />
+                    {/* Video URL info bar */}
+                    <div className="bg-black/60 px-4 py-2 flex items-center justify-between gap-2 border-t border-white/10">
+                      <p className="text-xs text-slate-400 truncate flex-1" title={result.video_url}>
+                        {result.video_url}
+                      </p>
+                      <button
+                        onClick={() => navigator.clipboard.writeText(result.video_url)}
+                        className="text-xs px-3 py-1 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded transition-colors border border-blue-500/30"
+                        title="Copy S3 URL"
+                      >
+                        Copy S3 URL
+                      </button>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
