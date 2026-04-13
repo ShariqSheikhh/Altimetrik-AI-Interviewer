@@ -33,6 +33,17 @@ export default function CandidateLogin() {
         throw new Error('You are not currently authorized to take this test.');
       }
 
+      // Check if candidate already completed the interview
+      const { data: existingResult } = await supabase
+        .from('results')
+        .select('id')
+        .eq('candidate_id', data.id)
+        .maybeSingle();
+
+      if (existingResult) {
+        throw new Error('You have already completed this interview. You cannot take it again.');
+      }
+
       // Store in simple localStorage for MVP persistence
       localStorage.setItem('candidate_id', data.id);
       localStorage.setItem('interview_id', data.interview_id);

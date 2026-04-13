@@ -33,6 +33,19 @@ export default function CandidateSetup() {
 
     const fetchData = async () => {
       try {
+        const { data: existingResult } = await supabase
+          .from('results')
+          .select('id')
+          .eq('candidate_id', candidateId)
+          .maybeSingle();
+
+        if (existingResult) {
+          localStorage.removeItem('candidate_id');
+          localStorage.removeItem('interview_id');
+          router.push('/candidate/login');
+          return;
+        }
+
         const [candidateRes, interviewRes] = await Promise.all([
           supabase.from('candidates').select('*').eq('id', candidateId).single(),
           supabase.from('interviews').select('*').eq('id', interviewId).single()
