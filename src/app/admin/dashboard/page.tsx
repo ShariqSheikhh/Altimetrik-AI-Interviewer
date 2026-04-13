@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { Plus, Users, Search, FolderClosed, ArrowRight, ShieldCheck, Video, LayoutDashboard, BarChart3 } from 'lucide-react';
+import { Plus, Users, Search, FolderClosed, ArrowRight, ShieldCheck, Video, LayoutDashboard, BarChart3, LogOut } from 'lucide-react';
 import Link from 'next/link';
 
 export default function AdminDashboard() {
@@ -39,12 +39,23 @@ export default function AdminDashboard() {
             </div>
             <span className="font-bold text-xl tracking-tight">Admin Portal</span>
           </div>
-          <Link 
-            href="/admin/interviews/create"
-            className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-full font-semibold flex items-center gap-2 text-sm transition-all shadow-[0_0_20px_-5px_var(--color-blue-600)]"
-          >
-            <Plus size={16} strokeWidth={3} /> Create Test
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link 
+              href="/admin/interviews/create"
+              className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-full font-semibold flex items-center gap-2 text-sm transition-all shadow-[0_0_20px_-5px_var(--color-blue-600)]"
+            >
+              <Plus size={16} strokeWidth={3} /> Create Test
+            </Link>
+            <button
+              onClick={async () => {
+                await supabase.auth.signOut();
+                router.push('/admin/login');
+              }}
+              className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 px-5 py-2.5 rounded-full font-semibold flex items-center gap-2 text-sm transition-all"
+            >
+              <LogOut size={16} strokeWidth={3} /> Sign Out
+            </button>
+          </div>
         </div>
       </nav>
 
