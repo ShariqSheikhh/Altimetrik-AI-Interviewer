@@ -10,7 +10,7 @@ import Link from 'next/link';
 export default function CreateTest() {
   const router = useRouter();
   const [title, setTitle] = useState('');
-  const [questions, setQuestions] = useState<{sl_no?: number, category?: string, question: string, answer: string, key_points: string[], follow_up_depth?: number}[]>([{question: '', answer: '', key_points: [], follow_up_depth: 2}]);
+  const [questions, setQuestions] = useState<{ sl_no?: number, category?: string, question: string, answer: string, key_points: string[], follow_up_depth?: number }[]>([{ question: '', answer: '', key_points: [], follow_up_depth: 2 }]);
   const [candidates, setCandidates] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -24,7 +24,7 @@ export default function CreateTest() {
       const workbook = new ExcelJS.Workbook();
       await workbook.xlsx.load(buffer);
       const worksheet = workbook.worksheets[0];
-      
+
       if (!worksheet) {
         setError('No worksheet found in Excel file.');
         return;
@@ -153,7 +153,7 @@ export default function CreateTest() {
     if (!title) return setError('Title is required');
     if (questions.some(q => !q.question.trim())) return setError('All questions must be filled');
     if (candidates.length === 0) return setError('At least one candidate is required from Excel');
-    
+
     setLoading(true);
     setError('');
 
@@ -164,7 +164,7 @@ export default function CreateTest() {
         .insert([{ title, question_bank: questions }])
         .select()
         .single();
-        
+
       if (iError || !interview) throw iError || new Error('Failed to create interview');
 
       // 2. Add Candidates
@@ -224,7 +224,7 @@ export default function CreateTest() {
           <div className="bg-white/5 border border-white/10 p-6 md:p-8 rounded-3xl backdrop-blur-sm">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-semibold">Question Bank</h2>
-              
+
               <div className="flex items-center gap-3">
                 <label className="cursor-pointer bg-black/50 hover:bg-black border border-white/10 hover:border-blue-500 px-4 py-2 rounded-xl flex items-center gap-2 transition-colors shrink-0">
                   <FileSpreadsheet className="text-blue-400" size={16} />
@@ -232,67 +232,100 @@ export default function CreateTest() {
                   <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleQuestionUpload} />
                 </label>
 
-                <button 
-                  onClick={() => setQuestions([...questions, {question: '', answer: '', key_points: [], follow_up_depth: 2}])}
+                <button
+                  onClick={() => setQuestions([...questions, { question: '', answer: '', key_points: [], follow_up_depth: 2 }])}
                   className="text-sm bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 px-4 py-2 rounded-xl transition-colors flex items-center gap-2"
                 >
-                  <Plus size={16} /> Add 
+                  <Plus size={16} /> Add
                 </button>
               </div>
             </div>
-            
+
             <p className="text-sm text-slate-400 mb-4">Upload an Excel file (.xlsx) with columns: <span className="text-white font-medium">Sl No, Category, Question, Coverage point 1–5, follow_up_depth</span>. Coverage points are read from separate columns automatically.</p>
-            <div className="space-y-4">
-              {questions.map((q, i) => (
-                <div key={i} className="flex items-start gap-4">
-                  <div className="w-8 h-10 mt-1 flex items-center justify-center shrink-0 bg-white/5 rounded-lg text-slate-500 font-bold text-sm">
-                    {i + 1}
-                  </div>
-                  <div className="flex-1 space-y-2">
-                    <textarea
-                      value={q.question}
-                      onChange={(e) => {
-                        const newQ = [...questions];
-                        newQ[i] = { ...newQ[i], question: e.target.value };
-                        setQuestions(newQ);
-                      }}
-                      rows={2}
-                      className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition-colors"
-                      placeholder="Enter interview question..."
-                    />
-                    <textarea
-                      value={q.answer}
-                      onChange={(e) => {
-                        const newQ = [...questions];
-                        newQ[i] = { ...newQ[i], answer: e.target.value };
-                        setQuestions(newQ);
-                      }}
-                      rows={2}
-                      className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-slate-300 focus:outline-none focus:border-green-500 transition-colors"
-                      placeholder="Enter expected answer..."
-                    />
-                    <textarea
-                      value={q.key_points.join('; ')}
-                      onChange={(e) => {
-                        const newQ = [...questions];
-                        newQ[i] = { ...newQ[i], key_points: e.target.value.split(';').map(kp => kp.trim()).filter(kp => kp) };
-                        setQuestions(newQ);
-                      }}
-                      rows={2}
-                      className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-amber-300/80 focus:outline-none focus:border-amber-500 transition-colors"
-                      placeholder="Enter key points separated by semicolons (e.g. REST architecture; HTTP methods; Statelessness)"
-                    />
-                  </div>
-                  {questions.length > 1 && (
-                    <button 
-                      onClick={() => setQuestions(questions.filter((_, idx) => idx !== i))}
-                      className="p-3 mt-1 hover:bg-red-500/20 hover:text-red-400 rounded-xl transition-colors text-slate-500"
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                  )}
-                </div>
-              ))}
+            <div className="overflow-x-auto border border-white/10 rounded-2xl bg-black/30 pb-2">
+              <table className="w-full text-left text-sm min-w-[1000px]">
+                <thead className="bg-[#111827] border-b border-white/10">
+                  <tr>
+                    <th className="px-4 py-3 font-medium text-slate-400 w-12 text-center border-r border-white/5">#</th>
+                    <th className="px-4 py-3 font-medium text-slate-400 w-48 border-r border-white/5">Category</th>
+                    <th className="px-4 py-3 font-medium text-slate-400 min-w-[300px] border-r border-white/5">Question</th>
+                    <th className="px-4 py-3 font-medium text-slate-400 min-w-[250px] border-r border-white/5">Coverage Points</th>
+                    <th className="px-4 py-3 font-medium text-slate-400 w-32 border-r border-white/5">Depth</th>
+                    <th className="px-4 py-3 font-medium text-slate-400 w-12 text-center">Del</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {questions.map((q, i) => (
+                    <tr key={i} className="hover:bg-white/5 group transition-colors">
+                      <td className="px-4 py-3 text-center text-slate-500 font-medium border-r border-white/5 bg-black/20">
+                        {q.sl_no || i + 1}
+                      </td>
+                      <td className="p-0 border-r border-white/5 relative">
+                        <input
+                          type="text"
+                          value={q.category || ''}
+                          onChange={(e) => {
+                            const newQ = [...questions];
+                            newQ[i] = { ...newQ[i], category: e.target.value };
+                            setQuestions(newQ);
+                          }}
+                          className="w-full h-full min-h-[60px] bg-transparent border-none px-4 py-3 text-white focus:outline-none focus:ring-2 ring-inset ring-blue-500 transition-all font-medium"
+                          placeholder="Category"
+                        />
+                      </td>
+                      <td className="p-0 border-r border-white/5 relative">
+                        <textarea
+                          value={q.question}
+                          onChange={(e) => {
+                            const newQ = [...questions];
+                            newQ[i] = { ...newQ[i], question: e.target.value };
+                            setQuestions(newQ);
+                          }}
+                          className="w-full h-full min-h-[60px] bg-transparent border-none px-4 py-3 text-white focus:outline-none focus:ring-2 ring-inset ring-blue-500 transition-all resize-none"
+                          placeholder="Question..."
+                        />
+                      </td>
+                      <td className="p-0 border-r border-white/5 relative">
+                        <textarea
+                          value={q.key_points.join('; ')}
+                          onChange={(e) => {
+                            const newQ = [...questions];
+                            newQ[i] = { ...newQ[i], key_points: e.target.value.split(';').map(kp => kp.trim()).filter(kp => kp) };
+                            setQuestions(newQ);
+                          }}
+                          className="w-full h-full min-h-[60px] bg-transparent border-none px-4 py-3 text-amber-300/90 focus:outline-none focus:ring-2 ring-inset ring-amber-500 transition-all resize-none"
+                          placeholder="Point 1; Point 2; Point 3..."
+                        />
+                      </td>
+                      <td className="p-0 border-r border-white/5 relative">
+                        <input
+                          type="number"
+                          min="0"
+                          max="5"
+                          value={q.follow_up_depth === undefined ? 2 : q.follow_up_depth}
+                          onChange={(e) => {
+                            const newQ = [...questions];
+                            newQ[i] = { ...newQ[i], follow_up_depth: parseInt(e.target.value) || 0 };
+                            setQuestions(newQ);
+                          }}
+                          className="w-full h-full min-h-[60px] bg-transparent border-none px-4 py-3 text-white focus:outline-none focus:ring-2 ring-inset ring-blue-500 transition-all text-center"
+                        />
+                      </td>
+                      <td className="p-2 text-center bg-black/10">
+                        {questions.length > 1 && (
+                          <button
+                            onClick={() => setQuestions(questions.filter((_, idx) => idx !== i))}
+                            className="p-2 w-full flex justify-center text-slate-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                            title="Delete Row"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
 
