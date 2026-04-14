@@ -3,7 +3,9 @@
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { Mic, MicOff, Video, Play, ShieldCheck, BookOpen, CheckCircle2, ArrowRight, Mail, AlertTriangle } from 'lucide-react';
+import { Mic, MicOff, Video, Play, ShieldCheck, BookOpen, CheckCircle2, ArrowRight, Mail, AlertTriangle, User } from 'lucide-react';
+import Image from 'next/image';
+import logoImg from '../../icon.png';
 
 export default function InterviewRoom() {
   const router = useRouter();
@@ -202,7 +204,7 @@ export default function InterviewRoom() {
     if (!processed) return;
     const chunks = splitIntoChunks(processed);
     for (let i = 0; i < chunks.length; i++) {
-      await speakChunk(chunks[i].trim(), i, chunks.length);
+        await speakChunk(chunks[i].trim(), i, chunks.length);
     }
   };
 
@@ -489,11 +491,9 @@ export default function InterviewRoom() {
     }
 
     // Upload video to S3 via server-side proxy (browser → Next.js API → S3)
-    // This avoids the CORS restriction of uploading directly from the browser to S3.
     let finalVideoUrl = '';
     if (mediaRecorderRef.current && recordedChunks.current.length > 0) {
       try {
-        // Wait for MediaRecorder to stop and flush all chunks
         await new Promise<void>(resolve => {
           if (!mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') {
             resolve();
@@ -502,7 +502,6 @@ export default function InterviewRoom() {
             setTimeout(resolve, 3000); // safety timeout
           }
         });
-        // Small delay to ensure all ondataavailable events have fired
         await new Promise(r => setTimeout(r, 300));
 
         setSavingStatus('Uploading session recording...');
@@ -511,7 +510,6 @@ export default function InterviewRoom() {
         if (videoBlob.size === 0) {
           console.warn('[Upload] Video blob is empty, skipping upload');
         } else {
-          // Request a Presigned URL from our Next.js API
           const fileName = `${candidate.id}-${Date.now()}.webm`;
           const controller = new AbortController();
           const timer = setTimeout(() => controller.abort(), 5 * 60 * 1000); // 5 min timeout
@@ -531,7 +529,6 @@ export default function InterviewRoom() {
           if (presignRes.ok && presignData.signedUrl) {
             setSavingStatus('Uploading session recording direct to S3...');
             
-            // Upload directly to S3 using the Presigned URL
             const uploadRes = await fetch(presignData.signedUrl, {
               method: 'PUT',
               body: videoBlob,
@@ -584,133 +581,94 @@ export default function InterviewRoom() {
   };
 
   return (
-    <div className="h-screen overflow-hidden bg-black text-white flex flex-col font-sans">
-      <header className="px-6 py-4 flex items-center justify-between border-b border-white/10 shrink-0">
-        <div className="flex items-center gap-2">
-          {stream ? <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" /> : <Video size={16} />}
-          <span className="font-semibold">{interview?.title || 'Loading Interview...'}</span>
+    <div className="h-screen overflow-hidden bg-[#fcfdfd] text-slate-800 flex flex-col font-sans">
+      <header className="px-6 py-4 flex items-center justify-between border-b border-slate-200 bg-white/70 backdrop-blur-md shrink-0 z-50">
+        <div className="flex items-center gap-3">
+          <Image src={logoImg} alt="Altimetrik" width={32} height={32} className="w-8 h-8 rounded-lg" />
+          <div className="h-6 w-[1px] bg-slate-200 mx-1" />
+          <div className="flex items-center gap-2">
+            {stream ? <div className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.5)]" /> : <Video size={16} className="text-slate-400" />}
+            <span className="font-bold text-slate-900 tracking-tight">{interview?.title || 'Assessment'}</span>
+          </div>
         </div>
 
         <div className="flex items-center gap-6">
-          <div className="hidden sm:block text-sm font-medium text-slate-400">
-            Candidate: <span className="text-white">{candidate?.name || '...'}</span>
+          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-100 rounded-xl">
+            <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center">
+              <User size={14} className="text-blue-600" />
+            </div>
+            <span className="text-sm font-medium text-slate-600">
+               {candidate?.name || 'Candidate'}
+            </span>
           </div>
 
           {supportEmail && (
             <a
               href={`mailto:${supportEmail}`}
-              title="Contact Support"
-              className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-xs font-semibold text-blue-400 transition-all hover:scale-105"
+              className="flex items-center gap-2 px-4 py-2 bg-white shadow-sm hover:shadow-md border border-slate-200 rounded-xl text-xs font-semibold text-slate-600 transition-all active:scale-95"
             >
-              <Mail size={14} />
+              <Mail size={14} className="text-blue-500" />
               <span className="hidden xs:inline">Support</span>
             </a>
           )}
         </div>
       </header>
 
-      <main className="flex-1 flex flex-col md:flex-row p-6 gap-6 relative overflow-hidden">
-        <div className="flex-1 rounded-3xl overflow-hidden bg-white/5 border border-white/10 relative shadow-2xl flex items-center justify-center">
+      <main className="flex-1 flex flex-col lg:flex-row p-6 gap-6 relative overflow-hidden bg-dot-pattern">
+        <div className="flex-1 rounded-[2rem] overflow-hidden bg-white shadow-[0_20px_50px_rgba(0,0,0,0.04)] border border-slate-200 relative flex items-center justify-center">
           <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
 
           {!isStarted && !showInstructions && (
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center">
+            <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-20">
               <button
                 onClick={handleShowInstructions}
-                className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-4 rounded-full font-bold text-lg flex items-center gap-3 transition-transform hover:scale-105"
+                className="bg-blue-600 hover:bg-blue-700 text-white px-10 py-5 rounded-2xl font-bold text-lg flex items-center gap-3 transition-all shadow-xl hover:shadow-2xl active:scale-95"
               >
-                <Play fill="currentColor" size={20} />
-                Start Interview
+                <Play fill="currentColor" size={24} />
+                Begin Assessment
               </button>
             </div>
           )}
 
           {showInstructions && !isStarted && (
-            <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-950 z-[100] flex items-center justify-center overflow-y-auto p-6">
-              <div className="max-w-2xl w-full space-y-6">
+            <div className="absolute inset-0 bg-white z-[100] flex items-center justify-center overflow-y-auto p-8">
+              <div className="max-w-2xl w-full space-y-8 animate-in fade-in zoom-in duration-300">
                 <div className="text-center space-y-3">
-                  <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-600/20 border border-blue-500/30 mb-2">
-                    <BookOpen size={32} className="text-blue-400" />
+                  <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-blue-50 border border-blue-100 mb-2">
+                    <BookOpen size={40} className="text-blue-500" />
                   </div>
-                  <h2 className="text-3xl font-bold text-white">Interview Instructions</h2>
-                  <p className="text-slate-400 text-sm">Please read the following instructions carefully before beginning your interview.</p>
+                  <h2 className="text-4xl font-bold text-slate-900 tracking-tight">Interview Guide</h2>
+                  <p className="text-slate-500 text-base">Quick guidelines for a successful session.</p>
                 </div>
 
-                <div className="bg-white/5 border border-white/10 rounded-2xl p-6 space-y-4">
-                  <div className="flex items-start gap-3">
-                    <CheckCircle2 size={20} className="text-green-400 mt-0.5 shrink-0" />
-                    <p className="text-slate-200 text-sm leading-relaxed">
-                      <span className="font-semibold text-white">Camera & Microphone:</span> Your camera and microphone will remain active throughout the entire interview for recording purposes.
-                    </p>
-                  </div>
-
-                  <div className="flex items-start gap-3">
-                    <CheckCircle2 size={20} className="text-green-400 mt-0.5 shrink-0" />
-                    <p className="text-slate-200 text-sm leading-relaxed">
-                      <span className="font-semibold text-white">Listen First:</span> The AI interviewer will ask you questions one at a time. Please <span className="text-blue-400 font-semibold">wait for the AI to finish speaking</span> completely before you begin your response.
-                    </p>
-                  </div>
-
-                  <div className="flex items-start gap-3">
-                    <CheckCircle2 size={20} className="text-green-400 mt-0.5 shrink-0" />
-                    <p className="text-slate-200 text-sm leading-relaxed">
-                      <span className="font-semibold text-white">Answering:</span> Once the AI has finished speaking, you will see a <span className="text-green-400 font-semibold">"Listening..."</span> indicator. Speak clearly into your microphone to answer. Your speech will be transcribed in real-time.
-                    </p>
-                  </div>
-
-                  <div className="flex items-start gap-3">
-                    <CheckCircle2 size={20} className="text-green-400 mt-0.5 shrink-0" />
-                    <p className="text-slate-200 text-sm leading-relaxed">
-                      <span className="font-semibold text-white">Clarification:</span> You can ask to repeat the question or request clarification if you don't understand it. You can also say that you don't know the answer if you're unsure.
-                    </p>
-                  </div>
-
-                  <div className="flex items-start gap-3">
-                    <CheckCircle2 size={20} className="text-green-400 mt-0.5 shrink-0" />
-                    <p className="text-slate-200 text-sm leading-relaxed">
-                      <span className="font-semibold text-white">Submitting Your Answer:</span> When you have finished answering, click the <span className="text-red-400 font-semibold">"Submit Answer"</span> button. The AI will then proceed to the next question. Do <span className="font-bold">not</span> click submit while you are still speaking.
-                    </p>
-                  </div>
-
-                  <div className="flex items-start gap-3">
-                    <CheckCircle2 size={20} className="text-green-400 mt-0.5 shrink-0" />
-                    <p className="text-slate-200 text-sm leading-relaxed">
-                      <span className="font-semibold text-white">Interview Flow:</span> The AI will first check if you are ready, then ask for a brief introduction, and finally proceed to the interview questions one by one.
-                    </p>
-                  </div>
-
-                  <div className="flex items-start gap-3">
-                    <CheckCircle2 size={20} className="text-green-400 mt-0.5 shrink-0" />
-                    <p className="text-slate-200 text-sm leading-relaxed">
-                      <span className="font-semibold text-white">Automatic Completion:</span> The interview will automatically end when all questions have been covered. Your video, transcript, and evaluation will be securely saved.
-                    </p>
-                  </div>
-
-                  <div className="flex items-start gap-3">
-                    <AlertTriangle size={20} className="text-amber-400 mt-0.5 shrink-0" />
-                    <p className="text-slate-200 text-sm leading-relaxed">
-                      <span className="font-semibold text-amber-300">Important:</span> Do <span className="font-bold">not</span> refresh, close, or navigate away from this page during the interview. Doing so will result in loss of your progress.
-                    </p>
-                  </div>
-
-                  {supportEmail && (
-                    <div className="flex items-start gap-3 pt-2 border-t border-white/10">
-                      <Mail size={20} className="text-blue-400 mt-0.5 shrink-0" />
-                      <p className="text-slate-200 text-sm leading-relaxed">
-                        <span className="font-semibold text-white">Technical Issues:</span> If you experience any <span className="italic">technical difficulties</span> during the interview (e.g., microphone not working, page freezing), please email{' '}
-                        <a href={`mailto:${supportEmail}`} className="text-blue-400 hover:text-blue-300 underline font-semibold">{supportEmail}</a>. This is for technical issues only.
-                      </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {[
+                    { icon: <Video className="text-blue-500" size={20} />, title: 'Camera Active', desc: 'Your video will be recorded for evaluation.' },
+                    { icon: <Mic className="text-emerald-500" size={20} />, title: 'Speak Clearly', desc: 'Wait for the AI to finish, then answer.' },
+                    { icon: <CheckCircle2 className="text-blue-500" size={20} />, title: 'Auto-Finish', desc: 'The session ends after all questions.' },
+                    { icon: <AlertTriangle className="text-amber-500" size={20} />, title: 'Stay on Page', desc: 'Do not refresh or close the tab.' }
+                  ].map((item, i) => (
+                    <div key={i} className="p-5 bg-slate-50 border border-slate-100 rounded-2xl flex gap-4">
+                        <div className="p-2 bg-white rounded-xl shadow-sm h-fit">{item.icon}</div>
+                        <div>
+                          <h4 className="font-bold text-slate-800 text-sm mb-1">{item.title}</h4>
+                          <p className="text-xs text-slate-500 leading-normal">{item.desc}</p>
+                        </div>
                     </div>
-                  )}
+                  ))}
+                </div>
+
+                <div className="bg-blue-50 border border-blue-100 p-6 rounded-[1.5rem] text-sm text-blue-800 text-center leading-relaxed">
+                  Ready to start? Ensure you are in a quiet room with a stable internet connection.
                 </div>
 
                 <div className="flex justify-center pt-2">
                   <button
                     onClick={startInterviewProcess}
-                    className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-10 py-4 rounded-full font-bold text-lg flex items-center gap-3 transition-all hover:scale-105 shadow-[0_0_40px_-10px_var(--color-blue-600)]"
+                    className="bg-slate-900 hover:bg-black text-white px-12 py-5 rounded-2xl font-bold text-lg flex items-center gap-3 transition-all shadow-xl hover:shadow-2xl active:scale-95"
                   >
-                    I Understand, Begin Interview
-                    <ArrowRight size={20} />
+                    Start Now
+                    <ArrowRight size={22} />
                   </button>
                 </div>
               </div>
@@ -718,12 +676,15 @@ export default function InterviewRoom() {
           )}
 
           {isCompleted && (
-            <div className="absolute inset-0 bg-indigo-950/90 backdrop-blur-xl flex flex-col items-center justify-center p-8 text-center z-[100]">
-              <ShieldCheck size={48} className="text-white mb-4 animate-bounce" />
-              <h2 className="text-3xl font-bold mb-4 text-white">
-                {isUploadComplete ? 'Interview Evaluated & Saved!' : 'Saving Session...'}
+            <div className="absolute inset-0 bg-white/95 backdrop-blur-xl flex flex-col items-center justify-center p-8 text-center z-[100] animate-in fade-in duration-500">
+               <div className="w-24 h-24 bg-blue-50 rounded-[2.5rem] flex items-center justify-center mb-8 shadow-inner">
+                  <ShieldCheck size={48} className="text-blue-600 animate-bounce" />
+               </div>
+              
+              <h2 className="text-4xl font-bold mb-3 text-slate-900 tracking-tight">
+                {isUploadComplete ? 'Assessment Complete!' : 'Finalizing...'}
               </h2>
-              <p className={`text-indigo-200 text-lg mb-8 ${!isUploadComplete ? 'animate-pulse' : ''}`}>
+              <p className={`text-slate-500 text-lg mb-10 max-w-md ${!isUploadComplete ? 'animate-pulse' : ''}`}>
                 {savingStatus}
               </p>
 
@@ -735,47 +696,60 @@ export default function InterviewRoom() {
                     try { recognitionRef.current?.stop(); } catch (e) { }
                     router.push('/');
                   }}
-                  className="bg-red-600 hover:bg-red-500 text-white font-bold px-10 py-4 rounded-full transition-transform hover:scale-105 shadow-[0_0_30px_-5px_var(--color-red-600)]"
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-12 py-5 rounded-2xl transition-all shadow-xl active:scale-95"
                 >
-                  End Test & Leave Protocol
+                  Return to Dashboard
                 </button>
               )}
             </div>
           )}
 
           {isListening && !isCompleted && (
-            <div className="absolute bottom-6 left-6 right-6 flex justify-between items-center bg-black/60 backdrop-blur-md px-6 py-4 rounded-full border border-white/10">
-              <div className="flex items-center gap-3 text-sm font-semibold text-white">
-                <Mic size={20} className="text-green-400 animate-pulse" /> Listening to your answer...
+            <div className="absolute bottom-8 left-8 right-8 flex justify-between items-center bg-white/90 backdrop-blur-md px-8 py-5 rounded-[2rem] border border-slate-200 shadow-2xl z-30 animate-in slide-in-from-bottom-4 duration-300">
+              <div className="flex items-center gap-4 text-base font-semibold text-slate-800">
+                <div className="relative">
+                  <Mic size={24} className="text-blue-500 relative z-10" />
+                  <div className="absolute inset-0 bg-blue-400 rounded-full animate-ping opacity-20" />
+                </div>
+                <span>Listening...</span>
               </div>
               <button
                 onClick={submitAnswer}
-                className="bg-red-600 hover:bg-red-500 text-white px-6 py-2 rounded-full text-sm font-bold flex items-center gap-2 transition-transform hover:scale-105"
+                className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-xl font-bold flex items-center gap-2 transition-all active:scale-95 shadow-lg"
               >
-                <MicOff size={18} /> Submit Answer
+                Submit Answer
               </button>
             </div>
           )}
         </div>
 
-        <div className="w-full md:w-96 flex flex-col bg-white/5 border border-white/10 rounded-3xl overflow-hidden shrink-0 h-full">
-          <div className="p-4 border-b border-white/10 bg-black/50">
-            <h3 className="font-semibold flex items-center gap-2">Live Transcript</h3>
+        <div className="w-full lg:w-[400px] flex flex-col bg-white shadow-[0_20px_50px_rgba(0,0,0,0.04)] border border-slate-200 rounded-[2rem] overflow-hidden shrink-0 h-full">
+          <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+            <h3 className="font-bold text-slate-900 flex items-center gap-2">
+              <span className="w-2 h-2 bg-blue-500 rounded-full" />
+              Dialogue History
+            </h3>
           </div>
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            {transcript.length === 0 && !currentAnswer && (
+              <div className="h-full flex flex-col items-center justify-center opacity-30 text-slate-400 p-8">
+                 <Mic size={40} className="mb-4" />
+                 <p className="text-sm font-medium">Interview haven't started yet</p>
+              </div>
+            )}
             {transcript.map((msg, i) => (
-              <div key={i} className={`flex flex-col ${msg.speaker === 'Candidate' ? 'items-end' : 'items-start'}`}>
-                <span className="text-[10px] uppercase font-bold text-slate-500 mb-1 px-1">{msg.speaker}</span>
-                <div className={`px-4 py-2 rounded-2xl max-w-[85%] text-sm leading-relaxed ${msg.speaker === 'Candidate' ? 'bg-blue-600 text-white rounded-tr-sm' : 'bg-white/10 text-slate-200 rounded-tl-sm'
+              <div key={i} className={`flex flex-col ${msg.speaker === 'Candidate' ? 'items-end' : 'items-start'} animate-in slide-in-from-bottom-2 duration-200`}>
+                <span className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 px-2 tracking-widest">{msg.speaker}</span>
+                <div className={`px-5 py-3 rounded-2xl max-w-[90%] text-sm leading-relaxed shadow-sm ${msg.speaker === 'Candidate' ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-slate-100 text-slate-700 rounded-tl-none border border-slate-100'
                   }`}>
                   {msg.text}
                 </div>
               </div>
             ))}
             {isListening && currentAnswer && (
-              <div className="flex flex-col items-end opacity-70">
-                <span className="text-[10px] uppercase font-bold text-slate-500 mb-1 px-1">Candidate (speaking...)</span>
-                <div className="px-4 py-2 rounded-2xl max-w-[85%] text-sm bg-blue-600/50 text-white rounded-tr-sm italic">
+              <div className="flex flex-col items-end">
+                <span className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 px-2 tracking-widest">Candidate (Live)</span>
+                <div className="px-5 py-3 rounded-2xl max-w-[90%] text-sm bg-blue-50 text-blue-700 border border-blue-100 italic">
                   {currentAnswer}
                 </div>
               </div>

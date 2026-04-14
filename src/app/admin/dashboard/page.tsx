@@ -3,166 +3,149 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { Plus, Users, Search, FolderClosed, ArrowRight, ShieldCheck, Video, LayoutDashboard, BarChart3, LogOut } from 'lucide-react';
+import { Plus, Users, ShieldCheck, Video, ArrowRight, FolderClosed, BarChart3, Clock, TrendingUp, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 
 export default function AdminDashboard() {
-  const router = useRouter();
-  const [interviews, setInterviews] = useState<any[]>([]);
-  const [results, setResults] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+    const router = useRouter();
+    const [interviews, setInterviews] = useState<any[]>([]);
+    const [results, setResults] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      // For MVP, just fetch everything
-      const [interviewsRes, resultsRes] = await Promise.all([
-        supabase.from('interviews').select('*').order('created_at', { ascending: false }),
-        supabase.from('results').select('*, candidates(name, email), interviews(title)').order('created_at', { ascending: false })
-      ]);
-      
-      if (interviewsRes.data) setInterviews(interviewsRes.data);
-      if (resultsRes.data) setResults(resultsRes.data);
-      setLoading(false);
-    };
-    
-    fetchData();
-  }, []);
+    useEffect(() => {
+        const fetchData = async () => {
+            const [interviewsRes, resultsRes] = await Promise.all([
+                supabase.from('interviews').select('*').order('created_at', { ascending: false }),
+                supabase.from('results').select('*, candidates(name, email), interviews(title)').order('created_at', { ascending: false })
+            ]);
 
-  return (
-    <div className="min-h-screen bg-[#0a0f1c] text-white">
-      {/* Navbar */}
-      <nav className="border-b border-white/10 bg-black/50 p-4 sticky top-0 z-50 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="bg-blue-500/20 text-blue-400 p-2 rounded-xl border border-blue-500/30">
-              <LayoutDashboard size={20} />
-            </div>
-            <span className="font-bold text-xl tracking-tight">Admin Portal</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <Link 
-              href="/admin/interviews/create"
-              className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-full font-semibold flex items-center gap-2 text-sm transition-all shadow-[0_0_20px_-5px_var(--color-blue-600)]"
-            >
-              <Plus size={16} strokeWidth={3} /> Create Test
-            </Link>
-            <button
-              onClick={async () => {
-                await supabase.auth.signOut();
-                router.push('/admin/login');
-              }}
-              className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 px-5 py-2.5 rounded-full font-semibold flex items-center gap-2 text-sm transition-all"
-            >
-              <LogOut size={16} strokeWidth={3} /> Sign Out
-            </button>
-          </div>
-        </div>
-      </nav>
+            if (interviewsRes.data) setInterviews(interviewsRes.data);
+            if (resultsRes.data) setResults(resultsRes.data);
+            setLoading(false);
+        };
 
-      <main className="max-w-7xl mx-auto p-6 md:p-8 space-y-12">
-        
-        {/* Recent Evaluations */}
-        <section>
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold flex items-center gap-2">
-              <ShieldCheck size={24} className="text-blue-400" /> Recent Evaluations
-            </h2>
-          </div>
+        fetchData();
+    }, []);
 
-          <div className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden backdrop-blur-sm max-h-[600px] overflow-y-auto">
-            {loading ? (
-              <div className="p-12 text-center text-slate-500 animate-pulse">Loading data...</div>
-            ) : results.length === 0 ? (
-              <div className="p-16 text-center text-slate-500 flex flex-col items-center">
-                <FolderClosed size={48} className="mb-4 opacity-50" />
-                <p>No evaluations recorded yet.</p>
-              </div>
-            ) : (
-              <table className="w-full text-left text-sm whitespace-nowrap">
-                <thead className="bg-black/50 text-slate-400 border-b border-white/10">
-                  <tr>
-                    <th className="px-6 py-4 font-medium uppercase tracking-wider text-[11px]">Candidate</th>
-                    <th className="px-6 py-4 font-medium uppercase tracking-wider text-[11px]">Interview</th>
-                    <th className="px-6 py-4 font-medium uppercase tracking-wider text-[11px]">AI Score</th>
-                    <th className="px-6 py-4 font-medium uppercase tracking-wider text-[11px]">Date</th>
-                    <th className="px-6 py-4 text-right"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {results.map((res) => (
-                    <tr key={res.id} className="hover:bg-white/5 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="font-medium text-white">{res.candidates?.name || 'Unknown'}</div>
-                        <div className="text-slate-500 mt-0.5 text-xs">{res.candidates?.email || 'N/A'}</div>
-                      </td>
-                      <td className="px-6 py-4 text-slate-300">
-                        {res.interviews?.title || 'Unknown Test'}
-                      </td>
-                      <td className="px-6 py-4">
-                        {typeof res.evaluation?.score === 'number' ? (
-                          <div className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${
-                            res.evaluation.score >= 60 ? 'bg-green-500/10 text-green-400 border border-green-500/20' :
-                            'bg-red-500/10 text-red-400 border border-red-500/20'
-                          }`}>
-                            {res.evaluation.score}/100
-                          </div>
-                        ) : (
-                          <span className="text-slate-500 text-xs">Pending</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 text-slate-400 text-xs">
-                        {new Date(res.created_at).toLocaleDateString()}
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <Link 
-                          href={`/admin/results/${res.id}`}
-                          className="inline-flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-full text-xs font-medium transition-colors border border-white/10"
-                        >
-                          <Video size={14} /> Review <ArrowRight size={14} />
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </section>
-
-        {/* Active Tests */}
-        <section>
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold flex items-center gap-2">
-              <Users size={24} className="text-blue-400" /> Active Interview Links
-            </h2>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-h-[480px] overflow-y-auto">
-            {interviews.map(inv => (
-              <div key={inv.id} className="bg-white/5 border border-white/10 rounded-3xl p-6 relative group hover:bg-white/10 transition-colors">
-                <div className="absolute top-4 right-4 w-2 h-2 rounded-full bg-green-500 shadow-[0_0_10px_var(--color-green-500)]" />
-                <h3 className="text-lg font-bold text-white mb-2">{inv.title}</h3>
-                <p className="text-sm text-slate-400 mb-6">{inv.question_bank.length} Questions Configured</p>
-                <div className="text-xs text-slate-500 border-t border-white/10 pt-4 mt-auto flex items-center justify-between">
-                  <span>Created {new Date(inv.created_at).toLocaleDateString()}</span>
-                  <Link
-                    href={`/admin/interviews/${inv.id}/status`}
-                    className="inline-flex items-center gap-1 text-blue-400 hover:text-blue-300 transition-colors font-medium"
-                  >
-                    <BarChart3 size={14} /> View Status
-                  </Link>
+    return (
+        <div className="space-y-10 animate-in fade-in duration-500">
+            {/* Welcome Header */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                <div>
+                    <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Dashboard</h1>
+                    <p className="text-slate-500 mt-1 font-medium tracking-tight">Altimetrik Assessment Management Portal</p>
                 </div>
-              </div>
-            ))}
-            {interviews.length === 0 && !loading && (
-              <div className="col-span-3 text-slate-500 text-center p-8 bg-white/5 rounded-3xl border border-white/10 border-dashed">
-                No active tests found. Create one to get started.
-              </div>
-            )}
-          </div>
-        </section>
-        
-      </main>
-    </div>
-  );
+                <Link
+                    href="/admin/interviews/create"
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-[1.5rem] font-black text-sm flex items-center justify-center gap-2 transition-all shadow-xl shadow-blue-600/20 active:scale-95"
+                >
+                    <Plus size={20} strokeWidth={3} />
+                    Initialize New Assessment
+                </Link>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-10">
+                {/* Recent Evaluations Table */}
+                <div className="xl:col-span-2 space-y-6">
+                    <div className="flex items-center justify-between px-2">
+                        <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                            <div className="w-1.5 h-1.5 bg-blue-500 rounded-full" />
+                            Latest Performance Data
+                        </h2>
+                        <Link href="/admin/results" className="text-xs font-black text-blue-600 hover:text-blue-700 tracking-widest uppercase">View Full Archive</Link>
+                    </div>
+
+                    <div className="bg-white border border-slate-200 rounded-[2.5rem] overflow-hidden shadow-sm">
+                        {loading ? (
+                            <div className="p-20 text-center"><Loader2 className="animate-spin mx-auto text-blue-500" size={32} /></div>
+                        ) : results.length === 0 ? (
+                            <div className="p-24 text-center flex flex-col items-center">
+                                <FolderClosed size={48} className="text-slate-200 mb-6" />
+                                <p className="text-slate-400 font-bold tracking-tight">No evaluation records found yet.</p>
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr className="bg-slate-50/50 border-b border-slate-100">
+                                            <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.15em]">Candidate Profile</th>
+                                            <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.15em]">Applied Context</th>
+                                            <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.15em]">Score</th>
+                                            <th className="px-10 py-6 text-right"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-50">
+                                        {results.slice(0, 10).map((res) => (
+                                            <tr key={res.id} className="group hover:bg-slate-50/50 transition-all">
+                                                <td className="px-10 py-6">
+                                                    <div className="font-black text-slate-900 leading-none">{res.candidates?.name || 'N/A'}</div>
+                                                    <div className="text-[11px] text-slate-400 font-bold mt-1.5">{res.candidates?.email}</div>
+                                                </td>
+                                                <td className="px-10 py-6">
+                                                    <span className="text-sm font-bold text-slate-600">{res.interviews?.title}</span>
+                                                </td>
+                                                <td className="px-10 py-6">
+                                                    {(res.evaluation?.score !== undefined && res.evaluation?.score !== null) ? (
+                                                        <div className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-black tracking-widest uppercase border ${res.evaluation.score >= 70 ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
+                                                                res.evaluation.score >= 50 ? 'bg-orange-50 text-orange-600 border-orange-100' :
+                                                                    'bg-red-50 text-red-600 border-red-100'
+                                                            }`}>
+                                                            {res.evaluation.score}%
+                                                        </div>
+                                                    ) : <span className="text-slate-300 italic text-xs font-bold tracking-tight">Analyzing...</span>}
+                                                </td>
+                                                <td className="px-10 py-6 text-right">
+                                                    <Link
+                                                        href={`/admin/results/${res.id}`}
+                                                        className="w-10 h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-400 group-hover:text-blue-600 group-hover:border-blue-200 transition-all group-active:scale-95 shadow-sm"
+                                                    >
+                                                        <ArrowRight size={18} />
+                                                    </Link>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Active Interview Templates Sidebar */}
+                <div className="space-y-6">
+                    <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2 px-2">
+                        <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+                        Live Assessment Flows
+                    </h2>
+                    <div className="space-y-4 max-h-[800px] overflow-y-auto pr-2 custom-scrollbar">
+                        {interviews.length === 0 ? (
+                            <div className="p-12 text-center bg-slate-50 border border-dashed border-slate-200 rounded-[2rem]">
+                                <p className="text-slate-400 font-bold text-sm italic">No active assessments found.</p>
+                            </div>
+                        ) : (
+                            interviews.map(inv => (
+                                <Link key={inv.id} href={`/admin/interviews/${inv.id}/status`} className="block bg-white border border-slate-200 p-8 rounded-[2rem] hover:border-blue-300 hover:shadow-lg hover:-translate-y-1 transition-all group relative overflow-hidden">
+                                    <div className="flex justify-between items-start mb-6">
+                                        <div className="bg-emerald-100 text-emerald-600 px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest">Active</div>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{new Date(inv.created_at).toLocaleDateString()}</p>
+                                    </div>
+                                    <h3 className="text-lg font-black text-slate-900 group-hover:text-blue-600 transition-colors leading-tight">{inv.title}</h3>
+                                    <div className="mt-6 flex items-center gap-6">
+                                        <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                            <Users size={14} className="text-blue-400" />
+                                            <span>{inv.candidate_count || 0} Registered</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                            <FolderClosed size={14} className="text-slate-300" />
+                                            <span>{inv.question_bank?.length || 0} Modules</span>
+                                        </div>
+                                    </div>
+                                </Link>
+                            ))
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
 }
