@@ -113,10 +113,13 @@ export default function AdminDashboard() {
 
                 {/* Active Interview Templates Sidebar */}
                 <div className="space-y-6">
-                    <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2 px-2">
-                        <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-                        Live Assessment Flows
-                    </h2>
+                    <div className="flex items-center justify-between px-2">
+                        <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                            <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+                            Live Assessment Flows
+                        </h2>
+                        <Link href="/admin/interviews" className="text-xs font-black text-emerald-600 hover:text-emerald-700 tracking-widest uppercase">View All</Link>
+                    </div>
                     <div className="space-y-4 max-h-[800px] overflow-y-auto pr-2 custom-scrollbar">
                         {interviews.length === 0 ? (
                             <div className="p-12 text-center bg-slate-50 border border-dashed border-slate-200 rounded-[2rem]">
