@@ -511,29 +511,45 @@ export default function InterviewRoom() {
         if (videoBlob.size === 0) {
           console.warn('[Upload] Video blob is empty, skipping upload');
         } else {
-          // Send the video blob to our Next.js API route as multipart/form-data.
-          // The server will forward it to S3, bypassing CORS entirely.
+          // Request a Presigned URL from our Next.js API
           const fileName = `${candidate.id}-${Date.now()}.webm`;
-          const formData = new FormData();
-          formData.append('file', videoBlob, fileName);
-          formData.append('fileName', fileName);
-
           const controller = new AbortController();
           const timer = setTimeout(() => controller.abort(), 5 * 60 * 1000); // 5 min timeout
 
-          const uploadRes = await fetch('/api/upload-video', {
+          const presignRes = await fetch('/api/upload-video', {
             method: 'POST',
-            body: formData,
-            signal: controller.signal,
-          }).finally(() => clearTimeout(timer));
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'upload',
+              fileName: fileName,
+              fileType: videoBlob.type || 'video/webm'
+            }),
+          });
+          
+          const presignData = await presignRes.json();
+          
+          if (presignRes.ok && presignData.signedUrl) {
+            setSavingStatus('Uploading session recording direct to S3...');
+            
+            // Upload directly to S3 using the Presigned URL
+            const uploadRes = await fetch(presignData.signedUrl, {
+              method: 'PUT',
+              body: videoBlob,
+              headers: {
+                'Content-Type': videoBlob.type || 'video/webm'
+              },
+              signal: controller.signal,
+            }).finally(() => clearTimeout(timer));
 
-          const uploadData = await uploadRes.json();
-
-          if (uploadRes.ok && uploadData.publicUrl) {
-            finalVideoUrl = uploadData.publicUrl;
-            console.log('[Upload] Success:', finalVideoUrl);
+            if (uploadRes.ok) {
+              finalVideoUrl = presignData.publicUrl;
+              console.log('[Upload] Success:', finalVideoUrl);
+            } else {
+              console.error('[Upload] Direct S3 upload failed:', uploadRes.statusText);
+            }
           } else {
-            console.error('[Upload] API returned error:', uploadData);
+            console.error('[Upload] API failed to return presigned URL:', presignData);
+            clearTimeout(timer);
           }
         }
       } catch (err: any) {
