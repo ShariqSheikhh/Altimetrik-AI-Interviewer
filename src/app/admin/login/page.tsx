@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Users, Lock, Loader2 } from 'lucide-react';
@@ -11,6 +11,20 @@ export default function AdminLogin() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
+
+  // If the admin is already logged in, redirect to dashboard immediately
+  useEffect(() => {
+    const checkExistingSession = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        router.replace('/admin/dashboard');
+      } else {
+        setCheckingSession(false);
+      }
+    };
+    checkExistingSession();
+  }, [router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,6 +47,15 @@ export default function AdminLogin() {
       setLoading(false);
     }
   };
+
+  // Show loading while checking for an existing session
+  if (checkingSession) {
+    return (
+      <div className="min-h-screen bg-[#0a0f1c] flex items-center justify-center">
+        <Loader2 className="animate-spin text-blue-400" size={36} />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#0a0f1c] flex items-center justify-center p-4">
