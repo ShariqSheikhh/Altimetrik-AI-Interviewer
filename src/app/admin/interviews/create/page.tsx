@@ -154,10 +154,9 @@ export default function CreateTest() {
     try {
       const { data: interview, error: iError } = await supabase
         .from('interviews')
-        .insert([{ 
-          title, 
-          question_bank: questions,
-          candidate_count: candidates.length 
+        .insert([{
+          title,
+          question_bank: questions
         }])
         .select()
         .single();
