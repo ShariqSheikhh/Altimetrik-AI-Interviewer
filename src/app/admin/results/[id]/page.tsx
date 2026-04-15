@@ -11,6 +11,8 @@ export default function ResultDetails() {
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [videoError, setVideoError] = useState(false);
+  const [presignedUrl, setPresignedUrl] = useState<string | null>(null);
+  const [fetchingUrl, setFetchingUrl] = useState(false);
 
   useEffect(() => {
     if (!params.id) return;
@@ -33,6 +35,34 @@ export default function ResultDetails() {
     fetchResult();
   }, [params.id]);
 
+  useEffect(() => {
+    if (!result?.video_url) return;
+
+    const getPresignedUrl = async () => {
+        setFetchingUrl(true);
+        try {
+            const url = new URL(result.video_url);
+            const key = url.pathname.replace(/^\//, '');
+
+            const response = await fetch('/api/s3-presign', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'get', fileName: key })
+            });
+            const data = await response.json();
+            if (data.signedUrl) {
+                setPresignedUrl(data.signedUrl);
+            }
+        } catch (err) {
+            console.error('Failed to fetch presigned URL:', err);
+        } finally {
+            setFetchingUrl(false);
+        }
+    };
+
+    getPresignedUrl();
+  }, [result?.video_url]);
+
   if (loading) {
     return (
         <div className="min-h-screen bg-[#fcfdfd] flex items-center justify-center">
@@ -52,16 +82,6 @@ export default function ResultDetails() {
   const score = result.evaluation?.score || 0;
   const scoring = result.evaluation?.scoring;
   const isGoodScore = score >= 60;
-
-  const getProxyVideoUrl = (s3Url: string): string => {
-    try {
-      const url = new URL(s3Url);
-      const key = url.pathname.replace(/^\//, '');
-      return `/api/video-stream?key=${encodeURIComponent(key)}`;
-    } catch {
-      return s3Url;
-    }
-  };
 
   return (
     <div className="space-y-10 animate-in fade-in duration-500">
@@ -141,7 +161,7 @@ export default function ResultDetails() {
                    {result.video_url && !videoError && (
                        <div className="flex items-center gap-2 px-3 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[10px] font-black tracking-widest">
                            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-                           SECURE STREAM
+                           {presignedUrl ? 'SECURE DIRECT STREAM' : 'INITIALIZING...'}
                        </div>
                    )}
                 </div>
@@ -158,11 +178,16 @@ export default function ResultDetails() {
                     ) : videoError ? (
                       <div className="absolute inset-0 flex flex-col items-center justify-center p-12 text-center">
                          <h4 className="text-white font-bold text-xl mb-4">Stream Playback Failed</h4>
-                         <a href={getProxyVideoUrl(result.video_url)} target="_blank" className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-xl font-bold transition-all shadow-lg active:scale-95">Download Recording</a>
+                         <a href={presignedUrl || result.video_url} target="_blank" className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-xl font-bold transition-all shadow-lg active:scale-95">Download Recording</a>
+                      </div>
+                    ) : !presignedUrl ? (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center p-12 text-center">
+                          <Loader2 className="animate-spin text-blue-500 mb-4" size={32} />
+                          <p className="text-slate-400 text-sm font-bold">Generating Secure Access URL...</p>
                       </div>
                     ) : (
                       <video
-                        src={getProxyVideoUrl(result.video_url)}
+                        src={presignedUrl}
                         controls
                         className="w-full h-full"
                         preload="metadata"
