@@ -156,8 +156,7 @@ export default function CreateTest() {
         .from('interviews')
         .insert([{ 
           title, 
-          question_bank: questions,
-          candidate_count: candidates.length 
+          question_bank: questions
         }])
         .select()
         .single();
@@ -228,93 +227,115 @@ export default function CreateTest() {
 
         {/* Question Bank Section */}
         <section className="bg-white border border-slate-200 rounded-[2.5rem] p-10 shadow-sm">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
-                <h2 className="text-xl font-bold text-slate-900 flex items-center gap-3">
-                   <Plus size={24} className="text-blue-500" />
-                   Question Bank
-                </h2>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-6">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900 flex items-center gap-3">
+                     <FileSpreadsheet size={24} className="text-blue-500" />
+                     Question Bank
+                  </h2>
+                  <p className="text-xs text-slate-400 font-medium mt-2">Upload Excel with: <span className="text-slate-700 font-bold">Sl No, Category, Question, Coverage Point 1–5, follow_up_depth</span></p>
+                </div>
                 
-                <div className="flex items-center gap-3">
-                    <label className="cursor-pointer bg-slate-50 hover:bg-white border border-slate-200 hover:border-blue-500 px-6 py-3 rounded-[1.25rem] flex items-center gap-3 transition-all active:scale-95 shadow-sm">
-                        <FileSpreadsheet className="text-emerald-500" size={20} />
+                <div className="flex items-center gap-3 shrink-0">
+                    <label className="cursor-pointer bg-slate-50 hover:bg-white border border-slate-200 hover:border-emerald-400 px-5 py-2.5 rounded-2xl flex items-center gap-2.5 transition-all active:scale-95 shadow-sm">
+                        <FileSpreadsheet className="text-emerald-500" size={18} />
                         <span className="font-bold text-sm text-slate-600">Import Excel</span>
                         <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleQuestionUpload} />
                     </label>
 
                     <button 
                         onClick={() => setQuestions([...questions, {question: '', answer: '', key_points: [], follow_up_depth: 2}])}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-[1.25rem] font-bold text-sm shadow-lg shadow-blue-600/20 active:scale-95 flex items-center gap-2"
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-2xl font-bold text-sm shadow-lg shadow-blue-600/20 active:scale-95 flex items-center gap-2"
                     >
-                        <Plus size={18} /> New Question
+                        <Plus size={16} /> Add Row
                     </button>
                 </div>
             </div>
-            
-            <div className="space-y-6">
-                {questions.map((q, i) => (
-                    <div key={i} className="group relative p-8 bg-slate-50 border border-slate-100 rounded-[2rem] hover:border-blue-100 hover:bg-blue-50/10 transition-all">
-                        <div className="absolute -left-4 top-8 w-10 h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center font-black text-slate-400 text-xs shadow-sm transition-transform group-hover:scale-110">
-                            {i + 1}
-                        </div>
-                        
-                        <div className="space-y-6 ml-4">
-                            <div className="space-y-2">
-                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Interview Question</label>
-                                <textarea
-                                    value={q.question}
-                                    onChange={(e) => {
-                                        const newQ = [...questions];
-                                        newQ[i] = { ...newQ[i], question: e.target.value };
-                                        setQuestions(newQ);
-                                    }}
-                                    rows={2}
-                                    className="w-full bg-white border border-slate-200 rounded-2xl px-5 py-4 text-slate-800 font-bold focus:outline-none focus:border-blue-500 transition-all outline-none"
-                                    placeholder="What do you want to ask?"
-                                />
-                            </div>
-                            
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div className="space-y-2">
-                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Ideal Model Answer</label>
-                                    <textarea
-                                        value={q.answer}
-                                        onChange={(e) => {
-                                            const newQ = [...questions];
-                                            newQ[i] = { ...newQ[i], answer: e.target.value };
-                                            setQuestions(newQ);
-                                        }}
-                                        rows={2}
-                                        className="w-full bg-white border border-slate-200 rounded-2xl px-5 py-4 text-slate-600 text-sm font-medium focus:outline-none focus:border-emerald-500 transition-all outline-none"
-                                        placeholder="The benchmark answer..."
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Critical Key Points (Semicolon separated)</label>
-                                    <textarea
-                                        value={q.key_points.join('; ')}
-                                        onChange={(e) => {
-                                            const newQ = [...questions];
-                                            newQ[i] = { ...newQ[i], key_points: e.target.value.split(';').map(kp => kp.trim()).filter(kp => kp) };
-                                            setQuestions(newQ);
-                                        }}
-                                        rows={2}
-                                        className="w-full bg-white border border-slate-200 rounded-2xl px-5 py-4 text-slate-600 text-sm font-medium focus:outline-none focus:border-orange-500 transition-all outline-none"
-                                        placeholder="REST; Stateless; Scalable..."
-                                    />
-                                </div>
-                            </div>
-                        </div>
 
+            <div className="overflow-x-auto rounded-2xl border border-slate-200 shadow-sm">
+              <table className="w-full text-left text-sm min-w-[1000px]">
+                <thead className="bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th className="px-4 py-3.5 font-black text-slate-400 text-[10px] uppercase tracking-widest w-12 text-center border-r border-slate-100">#</th>
+                    <th className="px-4 py-3.5 font-black text-slate-400 text-[10px] uppercase tracking-widest w-44 border-r border-slate-100">Category</th>
+                    <th className="px-4 py-3.5 font-black text-slate-400 text-[10px] uppercase tracking-widest min-w-[300px] border-r border-slate-100">Question</th>
+                    <th className="px-4 py-3.5 font-black text-slate-400 text-[10px] uppercase tracking-widest min-w-[260px] border-r border-slate-100">Coverage Points</th>
+                    <th className="px-4 py-3.5 font-black text-slate-400 text-[10px] uppercase tracking-widest w-24 text-center border-r border-slate-100">Depth</th>
+                    <th className="px-4 py-3.5 font-black text-slate-400 text-[10px] uppercase tracking-widest w-12 text-center">Del</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {questions.map((q, i) => (
+                    <tr key={i} className="hover:bg-blue-50/30 group transition-colors">
+                      <td className="px-4 py-3 text-center text-slate-400 font-black text-xs border-r border-slate-100 bg-slate-50/50">
+                        {q.sl_no || i + 1}
+                      </td>
+                      <td className="p-0 border-r border-slate-100">
+                        <input
+                          type="text"
+                          value={q.category || ''}
+                          onChange={(e) => {
+                            const newQ = [...questions];
+                            newQ[i] = { ...newQ[i], category: e.target.value };
+                            setQuestions(newQ);
+                          }}
+                          className="w-full h-full min-h-[56px] bg-transparent border-none px-4 py-3 text-slate-700 focus:outline-none focus:bg-blue-50/40 transition-all font-medium text-sm placeholder:text-slate-300"
+                          placeholder="Category..."
+                        />
+                      </td>
+                      <td className="p-0 border-r border-slate-100">
+                        <textarea
+                          value={q.question}
+                          onChange={(e) => {
+                            const newQ = [...questions];
+                            newQ[i] = { ...newQ[i], question: e.target.value };
+                            setQuestions(newQ);
+                          }}
+                          className="w-full h-full min-h-[56px] bg-transparent border-none px-4 py-3 text-slate-800 font-bold focus:outline-none focus:bg-blue-50/40 transition-all resize-none text-sm placeholder:text-slate-300"
+                          placeholder="Interview question..."
+                        />
+                      </td>
+                      <td className="p-0 border-r border-slate-100">
+                        <textarea
+                          value={q.key_points.join('; ')}
+                          onChange={(e) => {
+                            const newQ = [...questions];
+                            newQ[i] = { ...newQ[i], key_points: e.target.value.split(';').map(kp => kp.trim()).filter(kp => kp) };
+                            setQuestions(newQ);
+                          }}
+                          className="w-full h-full min-h-[56px] bg-transparent border-none px-4 py-3 text-amber-600 focus:outline-none focus:bg-amber-50/30 transition-all resize-none text-sm placeholder:text-slate-300"
+                          placeholder="Point 1; Point 2; Point 3..."
+                        />
+                      </td>
+                      <td className="p-0 border-r border-slate-100">
+                        <input
+                          type="number"
+                          min="0"
+                          max="5"
+                          value={q.follow_up_depth === undefined ? 2 : q.follow_up_depth}
+                          onChange={(e) => {
+                            const newQ = [...questions];
+                            newQ[i] = { ...newQ[i], follow_up_depth: parseInt(e.target.value) || 0 };
+                            setQuestions(newQ);
+                          }}
+                          className="w-full h-full min-h-[56px] bg-transparent border-none px-4 py-3 text-slate-700 focus:outline-none focus:bg-blue-50/40 transition-all text-center font-bold text-sm"
+                        />
+                      </td>
+                      <td className="p-2 text-center">
                         {questions.length > 1 && (
-                            <button 
-                                onClick={() => setQuestions(questions.filter((_, idx) => idx !== i))}
-                                className="absolute -right-4 top-8 w-10 h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-red-500 hover:border-red-100 hover:shadow-lg transition-all"
-                            >
-                                <Trash2 size={18} />
-                            </button>
+                          <button
+                            onClick={() => setQuestions(questions.filter((_, idx) => idx !== i))}
+                            className="p-2 w-full flex justify-center text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors"
+                            title="Delete Row"
+                          >
+                            <Trash2 size={16} />
+                          </button>
                         )}
-                    </div>
-                ))}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
         </section>
 
