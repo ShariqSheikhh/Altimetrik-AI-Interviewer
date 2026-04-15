@@ -14,12 +14,20 @@ export default function AdminDashboard() {
 
     useEffect(() => {
         const fetchData = async () => {
-            const [interviewsRes, resultsRes] = await Promise.all([
+            const [interviewsRes, resultsRes, candidatesRes] = await Promise.all([
                 supabase.from('interviews').select('*').order('created_at', { ascending: false }),
-                supabase.from('results').select('*, candidates(name, email), interviews(title)').order('created_at', { ascending: false })
+                supabase.from('results').select('*, candidates(name, email), interviews(title)').order('created_at', { ascending: false }),
+                supabase.from('candidates').select('interview_id')
             ]);
 
-            if (interviewsRes.data) setInterviews(interviewsRes.data);
+            if (interviewsRes.data) {
+                // Calculate candidate count for each interview
+                const interviewsWithCount = interviewsRes.data.map(inv => ({
+                    ...inv,
+                    candidate_count: candidatesRes.data?.filter(c => c.interview_id === inv.id).length || 0
+                }));
+                setInterviews(interviewsWithCount);
+            }
             if (resultsRes.data) setResults(resultsRes.data);
             setLoading(false);
         };
