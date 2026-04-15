@@ -52,9 +52,9 @@ export default function AdminDashboard() {
                 </Link>
             </div>
 
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-10">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
                 {/* Recent Evaluations Table */}
-                <div className="xl:col-span-2 space-y-6">
+                <div className="lg:col-span-2 space-y-6 min-w-0">
                     <div className="flex items-center justify-between px-2">
                         <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
                             <div className="w-1.5 h-1.5 bg-blue-500 rounded-full" />
@@ -76,23 +76,23 @@ export default function AdminDashboard() {
                                 <table className="w-full text-left border-collapse">
                                     <thead>
                                         <tr className="bg-slate-50/50 border-b border-slate-100">
-                                            <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.15em]">Candidate Profile</th>
-                                            <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.15em]">Applied Context</th>
-                                            <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.15em]">Score</th>
-                                            <th className="px-10 py-6 text-right"></th>
+                                            <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.15em]">Candidate Profile</th>
+                                            <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.15em]">Applied Context</th>
+                                            <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.15em]">Score</th>
+                                            <th className="px-6 py-5 text-right"></th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-50">
                                         {results.slice(0, 10).map((res) => (
                                             <tr key={res.id} className="group hover:bg-slate-50/50 transition-all">
-                                                <td className="px-10 py-6">
+                                                <td className="px-6 py-5">
                                                     <div className="font-black text-slate-900 leading-none">{res.candidates?.name || 'N/A'}</div>
                                                     <div className="text-[11px] text-slate-400 font-bold mt-1.5">{res.candidates?.email}</div>
                                                 </td>
-                                                <td className="px-10 py-6">
+                                                <td className="px-6 py-5">
                                                     <span className="text-sm font-bold text-slate-600">{res.interviews?.title}</span>
                                                 </td>
-                                                <td className="px-10 py-6">
+                                                <td className="px-6 py-5">
                                                     {(res.evaluation?.score !== undefined && res.evaluation?.score !== null) ? (
                                                         <div className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-black tracking-widest uppercase border ${res.evaluation.score >= 70 ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
                                                                 res.evaluation.score >= 50 ? 'bg-orange-50 text-orange-600 border-orange-100' :
@@ -102,7 +102,7 @@ export default function AdminDashboard() {
                                                         </div>
                                                     ) : <span className="text-slate-300 italic text-xs font-bold tracking-tight">Analyzing...</span>}
                                                 </td>
-                                                <td className="px-10 py-6 text-right">
+                                                <td className="px-6 py-5 text-right">
                                                     <Link
                                                         href={`/admin/results/${res.id}`}
                                                         className="w-10 h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-400 group-hover:text-blue-600 group-hover:border-blue-200 transition-all group-active:scale-95 shadow-sm"
@@ -120,7 +120,7 @@ export default function AdminDashboard() {
                 </div>
 
                 {/* Active Interview Templates Sidebar */}
-                <div className="space-y-6">
+                <div className="space-y-6 min-w-0">
                     <div className="flex items-center justify-between px-2">
                         <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
                             <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
