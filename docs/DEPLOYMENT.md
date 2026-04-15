@@ -96,10 +96,10 @@ NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 NEXT_PUBLIC_APP_URL=https://your-domain.com
 
-AWS_REGION=us-east-1
-AWS_ACCESS_KEY_ID=your-aws-key
-AWS_SECRET_ACCESS_KEY=your-aws-secret
-AWS_MODEL_NAME=amazon.nova-lite-v1:0
+REGION=us-east-1
+ACCESS_KEY_ID=your-aws-key
+SECRET_ACCESS_KEY=your-aws-secret
+MODEL_NAME=amazon.nova-lite-v1:0
 
 SUPPORT_MAIL=support@yourdomain.com
 
@@ -238,10 +238,10 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=prod-anon-key
 NEXT_PUBLIC_APP_URL=https://your-domain.com
 
 # AWS Bedrock (Production IAM User)
-AWS_REGION=us-east-1
-AWS_ACCESS_KEY_ID=prod-aws-key
-AWS_SECRET_ACCESS_KEY=prod-aws-secret
-AWS_MODEL_NAME=amazon.nova-lite-v1:0
+REGION=us-east-1
+ACCESS_KEY_ID=prod-aws-key
+SECRET_ACCESS_KEY=prod-aws-secret
+MODEL_NAME=amazon.nova-lite-v1:0
 
 # Support Email
 SUPPORT_MAIL=support@yourcompany.com
@@ -262,9 +262,9 @@ Create `lib/env-validation.ts`:
 const requiredEnvVars = [
   'NEXT_PUBLIC_SUPABASE_URL',
   'NEXT_PUBLIC_SUPABASE_ANON_KEY',
-  'AWS_REGION',
-  'AWS_ACCESS_KEY_ID',
-  'AWS_SECRET_ACCESS_KEY',
+  'REGION',
+  'ACCESS_KEY_ID',
+  'SECRET_ACCESS_KEY',
 ];
 
 for (const envVar of requiredEnvVars) {

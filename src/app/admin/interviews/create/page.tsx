@@ -4,13 +4,13 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import * as ExcelJS from 'exceljs';
-import { Upload, Plus, FileSpreadsheet, Loader2, ArrowLeft, Trash2 } from 'lucide-react';
+import { Upload, Plus, FileSpreadsheet, Loader2, ArrowLeft, Trash2, ShieldCheck, GraduationCap, Users } from 'lucide-react';
 import Link from 'next/link';
 
 export default function CreateTest() {
   const router = useRouter();
   const [title, setTitle] = useState('');
-  const [questions, setQuestions] = useState<{ sl_no?: number, category?: string, question: string, answer: string, key_points: string[], follow_up_depth?: number }[]>([{ question: '', answer: '', key_points: [], follow_up_depth: 2 }]);
+  const [questions, setQuestions] = useState<{sl_no?: number, category?: string, question: string, answer: string, key_points: string[], follow_up_depth?: number}[]>([{question: '', answer: '', key_points: [], follow_up_depth: 2}]);
   const [candidates, setCandidates] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -24,14 +24,13 @@ export default function CreateTest() {
       const workbook = new ExcelJS.Workbook();
       await workbook.xlsx.load(buffer);
       const worksheet = workbook.worksheets[0];
-
+      
       if (!worksheet) {
         setError('No worksheet found in Excel file.');
         return;
       }
 
       // Helper: ExcelJS returns hyperlinked cells (like emails) as objects
-      // e.g. { text: 'user@email.com', hyperlink: 'mailto:user@email.com' }
       const getCellText = (cellValue: any): string => {
         if (!cellValue) return '';
         if (typeof cellValue === 'string') return cellValue.trim();
@@ -80,14 +79,12 @@ export default function CreateTest() {
 
       worksheet.eachRow((row, rowNumber) => {
         if (rowNumber === 1) {
-          // Build header map: colNumber → normalized header name
           row.eachCell((cell, colNumber) => {
             headerMap[colNumber] = String(cell.value || '').toLowerCase().trim();
           });
           return;
         }
 
-        // Helper to get cell value by header name
         const getCol = (name: string) => {
           const col = Object.entries(headerMap).find(([_, v]) => v === name)?.[0];
           return col ? String(row.getCell(Number(col)).value ?? '').trim() : '';
@@ -96,10 +93,8 @@ export default function CreateTest() {
         const question = getCol('question');
         if (!question) return;
 
-        // Collect up to 5 coverage points from separate columns
         const keyPoints: string[] = [];
         for (let n = 1; n <= 5; n++) {
-          // Matches: "coverage point 1", "coverage point1", "coveragepoint1"
           const colEntry = Object.entries(headerMap).find(([_, v]) =>
             v === `coverage point ${n}` || v === `coverage point${n}` || v === `coveragepoint${n}`
           );
@@ -109,7 +104,6 @@ export default function CreateTest() {
           }
         }
 
-        // Fallback: if no coverage point columns found, try KeyPoints (semicolon-separated)
         if (keyPoints.length === 0) {
           const kpCol = Object.entries(headerMap).find(([_, v]) =>
             v === 'keypoints' || v === 'key_points' || v === 'key points'
@@ -128,7 +122,7 @@ export default function CreateTest() {
           sl_no: slNoRaw ? Number(slNoRaw) : undefined,
           category: category || undefined,
           question,
-          answer: getCol('answer'), // optional, may be empty
+          answer: getCol('answer'), 
           key_points: keyPoints,
           follow_up_depth: followUpDepthRaw ? Number(followUpDepthRaw) : 2,
         });
@@ -153,21 +147,23 @@ export default function CreateTest() {
     if (!title) return setError('Title is required');
     if (questions.some(q => !q.question.trim())) return setError('All questions must be filled');
     if (candidates.length === 0) return setError('At least one candidate is required from Excel');
-
+    
     setLoading(true);
     setError('');
 
     try {
-      // 1. Create Interview
       const { data: interview, error: iError } = await supabase
         .from('interviews')
-        .insert([{ title, question_bank: questions }])
+        .insert([{ 
+          title, 
+          question_bank: questions,
+          candidate_count: candidates.length 
+        }])
         .select()
         .single();
-
+        
       if (iError || !interview) throw iError || new Error('Failed to create interview');
 
-      // 2. Add Candidates
       const candidatesToInsert = candidates.map(c => ({
         ...c,
         interview_id: interview.id,
@@ -180,7 +176,6 @@ export default function CreateTest() {
 
       if (cError) throw cError;
 
-      // Redirect to send email page
       router.push(`/admin/interviews/${interview.id}/send-email`);
     } catch (err: any) {
       setError(err.message || 'Error saving test');
@@ -189,179 +184,179 @@ export default function CreateTest() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0f1c] text-white p-6 md:p-8 selection:bg-blue-500/30">
-      <div className="max-w-4xl mx-auto">
-        <div className="flex items-center gap-4 mb-8">
-          <Link href="/admin/dashboard" className="p-2 hover:bg-white/10 rounded-full transition-colors">
-            <ArrowLeft size={24} />
+    <div className="space-y-10 animate-in fade-in duration-500 max-w-5xl mx-auto">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-6">
+          <Link href="/admin/dashboard" className="w-12 h-12 bg-white border border-slate-200 rounded-2xl flex items-center justify-center text-slate-400 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm">
+            <ArrowLeft size={20} />
           </Link>
-          <h1 className="text-3xl font-bold tracking-tight">Create New Interview</h1>
-        </div>
-
-        {error && (
-          <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-4 rounded-2xl mb-6">
-            {error}
+          <div>
+            <h1 className="text-3xl font-black text-slate-900 tracking-tight">Create Assessment</h1>
+            <p className="text-slate-500 font-medium">Design your custom interview flow and invite candidates.</p>
           </div>
-        )}
+        </div>
+      </div>
 
-        <div className="space-y-8">
-          {/* General Details */}
-          <div className="bg-white/5 border border-white/10 p-6 md:p-8 rounded-3xl backdrop-blur-sm">
-            <h2 className="text-xl font-semibold mb-6">General Details</h2>
-            <div>
-              <label className="block text-sm font-medium text-slate-400 mb-2">Interview Title / Role</label>
+      {error && (
+        <div className="bg-red-50 border border-red-100 text-red-600 px-6 py-4 rounded-2xl font-bold flex items-center gap-3 animate-in shake duration-300">
+           <Trash2 size={20} />
+           {error}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-10">
+        {/* Title Section */}
+        <section className="bg-white border border-slate-200 rounded-[2.5rem] p-10 shadow-sm relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-8 opacity-[0.03] pointer-events-none">
+                <GraduationCap size={120} />
+            </div>
+            <h2 className="text-xl font-bold mb-8 text-slate-900 flex items-center gap-3">
+               <ShieldCheck size={24} className="text-blue-500" />
+               Interview Identity
+            </h2>
+            <div className="max-w-2xl">
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3 ml-1">Assessment Title / Role Name</label>
               <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition-colors"
+                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 text-slate-900 font-bold text-lg focus:outline-none focus:border-blue-500 focus:bg-white transition-all outline-none shadow-sm"
                 placeholder="e.g. Senior Frontend Engineer"
               />
             </div>
-          </div>
+        </section>
 
-          {/* Question Bank */}
-          <div className="bg-white/5 border border-white/10 p-6 md:p-8 rounded-3xl backdrop-blur-sm">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-semibold">Question Bank</h2>
+        {/* Question Bank Section */}
+        <section className="bg-white border border-slate-200 rounded-[2.5rem] p-10 shadow-sm">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
+                <h2 className="text-xl font-bold text-slate-900 flex items-center gap-3">
+                   <Plus size={24} className="text-blue-500" />
+                   Question Bank
+                </h2>
+                
+                <div className="flex items-center gap-3">
+                    <label className="cursor-pointer bg-slate-50 hover:bg-white border border-slate-200 hover:border-blue-500 px-6 py-3 rounded-[1.25rem] flex items-center gap-3 transition-all active:scale-95 shadow-sm">
+                        <FileSpreadsheet className="text-emerald-500" size={20} />
+                        <span className="font-bold text-sm text-slate-600">Import Excel</span>
+                        <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleQuestionUpload} />
+                    </label>
 
-              <div className="flex items-center gap-3">
-                <label className="cursor-pointer bg-black/50 hover:bg-black border border-white/10 hover:border-blue-500 px-4 py-2 rounded-xl flex items-center gap-2 transition-colors shrink-0">
-                  <FileSpreadsheet className="text-blue-400" size={16} />
-                  <span className="font-medium text-sm text-slate-300">Upload Excel</span>
-                  <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleQuestionUpload} />
-                </label>
-
-                <button
-                  onClick={() => setQuestions([...questions, { question: '', answer: '', key_points: [], follow_up_depth: 2 }])}
-                  className="text-sm bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 px-4 py-2 rounded-xl transition-colors flex items-center gap-2"
-                >
-                  <Plus size={16} /> Add
-                </button>
-              </div>
+                    <button 
+                        onClick={() => setQuestions([...questions, {question: '', answer: '', key_points: [], follow_up_depth: 2}])}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-[1.25rem] font-bold text-sm shadow-lg shadow-blue-600/20 active:scale-95 flex items-center gap-2"
+                    >
+                        <Plus size={18} /> New Question
+                    </button>
+                </div>
             </div>
+            
+            <div className="space-y-6">
+                {questions.map((q, i) => (
+                    <div key={i} className="group relative p-8 bg-slate-50 border border-slate-100 rounded-[2rem] hover:border-blue-100 hover:bg-blue-50/10 transition-all">
+                        <div className="absolute -left-4 top-8 w-10 h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center font-black text-slate-400 text-xs shadow-sm transition-transform group-hover:scale-110">
+                            {i + 1}
+                        </div>
+                        
+                        <div className="space-y-6 ml-4">
+                            <div className="space-y-2">
+                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Interview Question</label>
+                                <textarea
+                                    value={q.question}
+                                    onChange={(e) => {
+                                        const newQ = [...questions];
+                                        newQ[i] = { ...newQ[i], question: e.target.value };
+                                        setQuestions(newQ);
+                                    }}
+                                    rows={2}
+                                    className="w-full bg-white border border-slate-200 rounded-2xl px-5 py-4 text-slate-800 font-bold focus:outline-none focus:border-blue-500 transition-all outline-none"
+                                    placeholder="What do you want to ask?"
+                                />
+                            </div>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="space-y-2">
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Ideal Model Answer</label>
+                                    <textarea
+                                        value={q.answer}
+                                        onChange={(e) => {
+                                            const newQ = [...questions];
+                                            newQ[i] = { ...newQ[i], answer: e.target.value };
+                                            setQuestions(newQ);
+                                        }}
+                                        rows={2}
+                                        className="w-full bg-white border border-slate-200 rounded-2xl px-5 py-4 text-slate-600 text-sm font-medium focus:outline-none focus:border-emerald-500 transition-all outline-none"
+                                        placeholder="The benchmark answer..."
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Critical Key Points (Semicolon separated)</label>
+                                    <textarea
+                                        value={q.key_points.join('; ')}
+                                        onChange={(e) => {
+                                            const newQ = [...questions];
+                                            newQ[i] = { ...newQ[i], key_points: e.target.value.split(';').map(kp => kp.trim()).filter(kp => kp) };
+                                            setQuestions(newQ);
+                                        }}
+                                        rows={2}
+                                        className="w-full bg-white border border-slate-200 rounded-2xl px-5 py-4 text-slate-600 text-sm font-medium focus:outline-none focus:border-orange-500 transition-all outline-none"
+                                        placeholder="REST; Stateless; Scalable..."
+                                    />
+                                </div>
+                            </div>
+                        </div>
 
-            <p className="text-sm text-slate-400 mb-4">Upload an Excel file (.xlsx) with columns: <span className="text-white font-medium">Sl No, Category, Question, Coverage point 1–5, follow_up_depth</span>. Coverage points are read from separate columns automatically.</p>
-            <div className="overflow-x-auto border border-white/10 rounded-2xl bg-black/30 pb-2">
-              <table className="w-full text-left text-sm min-w-[1000px]">
-                <thead className="bg-[#111827] border-b border-white/10">
-                  <tr>
-                    <th className="px-4 py-3 font-medium text-slate-400 w-12 text-center border-r border-white/5">#</th>
-                    <th className="px-4 py-3 font-medium text-slate-400 w-48 border-r border-white/5">Category</th>
-                    <th className="px-4 py-3 font-medium text-slate-400 min-w-[300px] border-r border-white/5">Question</th>
-                    <th className="px-4 py-3 font-medium text-slate-400 min-w-[250px] border-r border-white/5">Coverage Points</th>
-                    <th className="px-4 py-3 font-medium text-slate-400 w-32 border-r border-white/5">Depth</th>
-                    <th className="px-4 py-3 font-medium text-slate-400 w-12 text-center">Del</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {questions.map((q, i) => (
-                    <tr key={i} className="hover:bg-white/5 group transition-colors">
-                      <td className="px-4 py-3 text-center text-slate-500 font-medium border-r border-white/5 bg-black/20">
-                        {q.sl_no || i + 1}
-                      </td>
-                      <td className="p-0 border-r border-white/5 relative">
-                        <input
-                          type="text"
-                          value={q.category || ''}
-                          onChange={(e) => {
-                            const newQ = [...questions];
-                            newQ[i] = { ...newQ[i], category: e.target.value };
-                            setQuestions(newQ);
-                          }}
-                          className="w-full h-full min-h-[60px] bg-transparent border-none px-4 py-3 text-white focus:outline-none focus:ring-2 ring-inset ring-blue-500 transition-all font-medium"
-                          placeholder="Category"
-                        />
-                      </td>
-                      <td className="p-0 border-r border-white/5 relative">
-                        <textarea
-                          value={q.question}
-                          onChange={(e) => {
-                            const newQ = [...questions];
-                            newQ[i] = { ...newQ[i], question: e.target.value };
-                            setQuestions(newQ);
-                          }}
-                          className="w-full h-full min-h-[60px] bg-transparent border-none px-4 py-3 text-white focus:outline-none focus:ring-2 ring-inset ring-blue-500 transition-all resize-none"
-                          placeholder="Question..."
-                        />
-                      </td>
-                      <td className="p-0 border-r border-white/5 relative">
-                        <textarea
-                          value={q.key_points.join('; ')}
-                          onChange={(e) => {
-                            const newQ = [...questions];
-                            newQ[i] = { ...newQ[i], key_points: e.target.value.split(';').map(kp => kp.trim()).filter(kp => kp) };
-                            setQuestions(newQ);
-                          }}
-                          className="w-full h-full min-h-[60px] bg-transparent border-none px-4 py-3 text-amber-300/90 focus:outline-none focus:ring-2 ring-inset ring-amber-500 transition-all resize-none"
-                          placeholder="Point 1; Point 2; Point 3..."
-                        />
-                      </td>
-                      <td className="p-0 border-r border-white/5 relative">
-                        <input
-                          type="number"
-                          min="0"
-                          max="5"
-                          value={q.follow_up_depth === undefined ? 2 : q.follow_up_depth}
-                          onChange={(e) => {
-                            const newQ = [...questions];
-                            newQ[i] = { ...newQ[i], follow_up_depth: parseInt(e.target.value) || 0 };
-                            setQuestions(newQ);
-                          }}
-                          className="w-full h-full min-h-[60px] bg-transparent border-none px-4 py-3 text-white focus:outline-none focus:ring-2 ring-inset ring-blue-500 transition-all text-center"
-                        />
-                      </td>
-                      <td className="p-2 text-center bg-black/10">
                         {questions.length > 1 && (
-                          <button
-                            onClick={() => setQuestions(questions.filter((_, idx) => idx !== i))}
-                            className="p-2 w-full flex justify-center text-slate-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                            title="Delete Row"
-                          >
-                            <Trash2 size={18} />
-                          </button>
+                            <button 
+                                onClick={() => setQuestions(questions.filter((_, idx) => idx !== i))}
+                                className="absolute -right-4 top-8 w-10 h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-red-500 hover:border-red-100 hover:shadow-lg transition-all"
+                            >
+                                <Trash2 size={18} />
+                            </button>
                         )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                    </div>
+                ))}
             </div>
-          </div>
+        </section>
 
-          {/* Candidates Excel Upload */}
-          <div className="bg-white/5 border border-white/10 p-6 md:p-8 rounded-3xl backdrop-blur-sm">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-6">
-              <div>
-                <h2 className="text-xl font-semibold mb-1">Allowed Candidates</h2>
-                <p className="text-sm text-slate-400">Upload an Excel file (.xlsx) with columns: Name, Email.</p>
-              </div>
-              <label className="cursor-pointer bg-black/50 hover:bg-black border border-white/10 hover:border-blue-500 px-6 py-4 rounded-2xl flex items-center gap-3 transition-colors shrink-0">
-                <FileSpreadsheet className="text-blue-400" size={24} />
-                <span className="font-medium text-sm">Select Excel File</span>
-                <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFileUpload} />
-              </label>
+        {/* Candidates Section */}
+        <section className="bg-white border border-slate-200 rounded-[2.5rem] p-10 shadow-sm relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-8 opacity-[0.03] pointer-events-none">
+                <Users size={120} />
+            </div>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 mb-10">
+                <div>
+                   <h2 className="text-xl font-bold mb-1 text-slate-900 flex items-center gap-3">
+                      <Users size={24} className="text-blue-500" />
+                      Candidate Invites
+                   </h2>
+                   <p className="text-sm text-slate-500 font-medium">Upload Excel with <span className="text-slate-900 font-bold">Name</span> and <span className="text-slate-900 font-bold">Email</span> columns.</p>
+                </div>
+                <label className="cursor-pointer bg-slate-900 hover:bg-black px-8 py-4 rounded-2xl flex items-center gap-3 transition-all active:scale-95 shadow-xl text-white">
+                    <Upload size={20} />
+                    <span className="font-bold text-sm">Upload Candidates</span>
+                    <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFileUpload} />
+                </label>
             </div>
 
             {candidates.length > 0 && (
-              <div className="mt-8">
-                <div className="text-sm font-medium mb-4 flex items-center gap-2">
-                  <div className="w-2 h-2 bg-green-500 rounded-full" />
-                  Loaded {candidates.length} candidates
+              <div className="animate-in fade-in slide-in-from-top-2 duration-500">
+                <div className="flex items-center gap-2 mb-6 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-xl w-fit text-xs font-black uppercase tracking-widest border border-emerald-100">
+                  <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+                  {candidates.length} Profiles Ready
                 </div>
-                <div className="max-h-64 overflow-y-auto border border-white/5 rounded-xl bg-black/30">
-                  <table className="w-full text-left text-sm">
-                    <thead className="bg-white/5 sticky top-0">
+                <div className="overflow-hidden rounded-3xl border border-slate-100 shadow-sm">
+                  <table className="w-full text-left text-sm border-collapse">
+                    <thead className="bg-slate-50">
                       <tr>
-                        <th className="px-4 py-3 font-medium text-slate-400">Name</th>
-                        <th className="px-4 py-3 font-medium text-slate-400">Email</th>
+                        <th className="px-6 py-4 font-black text-slate-400 text-[10px] uppercase tracking-widest">Name</th>
+                        <th className="px-6 py-4 font-black text-slate-400 text-[10px] uppercase tracking-widest">Email Address</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-white/5">
+                    <tbody className="divide-y divide-slate-50 bg-white">
                       {candidates.map((c, i) => (
-                        <tr key={i} className="hover:bg-white/5">
-                          <td className="px-4 py-3">{c.name}</td>
-                          <td className="px-4 py-3 text-slate-400">{c.email}</td>
+                        <tr key={i} className="hover:bg-slate-50/50 transition-colors">
+                          <td className="px-6 py-4 font-bold text-slate-900">{c.name}</td>
+                          <td className="px-6 py-4 text-slate-500 font-medium">{c.email}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -369,17 +364,16 @@ export default function CreateTest() {
                 </div>
               </div>
             )}
-          </div>
+        </section>
 
-          <div className="flex justify-end pt-4">
-            <button
-              onClick={handleSave}
-              disabled={loading}
-              className="bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-full px-10 py-4 flex items-center gap-3 transition-all shadow-[0_0_30px_-5px_var(--color-blue-600)] disabled:opacity-50"
-            >
-              {loading ? <Loader2 className="animate-spin" size={20} /> : <><Upload size={20} /> Create Test & Send Invites</>}
-            </button>
-          </div>
+        <div className="flex justify-center pt-8">
+          <button
+            onClick={handleSave}
+            disabled={loading}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-black text-lg rounded-[2rem] px-16 py-6 flex items-center gap-4 transition-all shadow-2xl shadow-blue-600/30 active:scale-95 disabled:opacity-50"
+          >
+            {loading ? <Loader2 className="animate-spin" size={24} /> : <>Initialize Assessment & Notify Teams</>}
+          </button>
         </div>
       </div>
     </div>

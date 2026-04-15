@@ -163,15 +163,15 @@ The system prompt instructs the AI to:
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 
 const client = new BedrockRuntimeClient({
-  region: process.env.AWS_REGION,
+  region: process.env.REGION,
   credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+    accessKeyId: process.env.ACCESS_KEY_ID!,
+    secretAccessKey: process.env.SECRET_ACCESS_KEY!,
   },
 });
 
 const command = new InvokeModelCommand({
-  modelId: process.env.AWS_MODEL_NAME || 'amazon.nova-lite-v1:0',
+  modelId: process.env.MODEL_NAME || 'amazon.nova-lite-v1:0',
   contentType: 'application/json',
   accept: 'application/json',
   body: JSON.stringify({

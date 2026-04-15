@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { ArrowLeft, CheckCircle, XCircle, Loader2, Mail, RefreshCw } from 'lucide-react';
+import { ArrowLeft, CheckCircle, XCircle, Loader2, Mail, RefreshCw, Send, ShieldCheck } from 'lucide-react';
 import Link from 'next/link';
 
 export default function EmailProgressPage() {
@@ -37,27 +37,26 @@ export default function EmailProgressPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#0a0f1c] flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="animate-spin mx-auto mb-4 text-blue-400" size={48} />
-          <p className="text-slate-400">Loading progress...</p>
-        </div>
+      <div className="min-h-screen bg-[#fcfdfd] flex items-center justify-center">
+        <Loader2 className="animate-spin text-blue-500" size={32} />
       </div>
     );
   }
 
   if (!progress) {
     return (
-      <div className="min-h-screen bg-[#0a0f1c] flex items-center justify-center p-6">
-        <div className="max-w-md text-center bg-white/5 border border-white/10 rounded-3xl p-8">
-          <Mail size={48} className="mx-auto mb-4 text-slate-500" />
-          <h2 className="text-xl font-bold text-white mb-2">No Progress Data</h2>
-          <p className="text-slate-400 mb-6">No email sending progress found. Please send invites first.</p>
+      <div className="min-h-screen bg-[#fcfdfd] flex items-center justify-center p-10 font-sans">
+        <div className="max-w-md w-full text-center bg-white border border-slate-200 rounded-[2.5rem] p-12 shadow-sm">
+          <div className="w-20 h-20 bg-slate-50 rounded-3xl flex items-center justify-center mx-auto mb-6 text-slate-300">
+             <Mail size={40} />
+          </div>
+          <h2 className="text-2xl font-black text-slate-900 mb-2">No Active Dispatch</h2>
+          <p className="text-slate-500 font-medium mb-8">We couldn't find any recent email broadcast data for this session.</p>
           <Link
             href={`/admin/interviews/${interviewId}/send-email`}
-            className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold px-6 py-3 rounded-full transition-colors"
+            className="w-full inline-flex items-center justify-center gap-3 bg-blue-600 hover:bg-blue-700 text-white font-black px-8 py-4 rounded-2xl transition-all shadow-lg shadow-blue-600/20 active:scale-95"
           >
-            <Mail size={18} /> Send Invites
+            <Send size={18} /> Initialize Dispatch
           </Link>
         </div>
       </div>
@@ -67,93 +66,91 @@ export default function EmailProgressPage() {
   const successRate = Math.round((progress.sent / progress.total) * 100);
 
   return (
-    <div className="min-h-screen bg-[#0a0f1c] text-white p-6 md:p-8">
-      <div className="max-w-4xl mx-auto">
-        <div className="flex items-center gap-4 mb-8">
-          <Link href="/admin/dashboard" className="p-2 hover:bg-white/10 rounded-full transition-colors">
-            <ArrowLeft size={24} />
-          </Link>
-          <h1 className="text-3xl font-bold tracking-tight">Email Sending Progress</h1>
+    <div className="space-y-10 animate-in fade-in duration-500 max-w-5xl mx-auto">
+      <div className="flex items-center gap-6">
+        <Link href="/admin/dashboard" className="w-12 h-12 bg-white border border-slate-200 rounded-2xl flex items-center justify-center text-slate-400 hover:text-blue-600 transition-all shadow-sm">
+          <ArrowLeft size={20} />
+        </Link>
+        <div>
+           <h1 className="text-3xl font-black text-slate-900 tracking-tight">Dispatch Report</h1>
+           <p className="text-slate-500 font-medium">Monitoring the status of your invitation broadcast.</p>
         </div>
+      </div>
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
-            <div className="text-slate-400 text-sm mb-1">Total</div>
-            <div className="text-3xl font-bold text-white">{progress.total}</div>
+      {/* Summary Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="bg-white border border-slate-200 p-8 rounded-[2rem] shadow-sm">
+             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Total Batch</p>
+             <div className="text-3xl font-black text-slate-900">{progress.total}</div>
           </div>
+          <div className="bg-emerald-50 border border-emerald-100 p-8 rounded-[2rem] shadow-sm">
+             <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-3">Successfully Sent</p>
+             <div className="text-3xl font-black text-emerald-700">{progress.sent}</div>
+          </div>
+          <div className="bg-red-50 border border-red-100 p-8 rounded-[2rem] shadow-sm">
+             <p className="text-[10px] font-black text-red-600 uppercase tracking-widest mb-3">Delivery Failures</p>
+             <div className="text-3xl font-black text-red-700">{progress.failed}</div>
+          </div>
+          <div className="bg-slate-900 p-8 rounded-[2rem] shadow-xl text-white">
+             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Success Index</p>
+             <div className="text-3xl font-black">{successRate}%</div>
+          </div>
+      </div>
 
-          <div className="bg-green-500/10 border border-green-500/20 rounded-2xl p-6">
-            <div className="text-green-400 text-sm mb-1 flex items-center gap-2">
-              <CheckCircle size={16} /> Sent
-            </div>
-            <div className="text-3xl font-bold text-green-400">{progress.sent}</div>
+      {/* Overall Progress */}
+      <section className="bg-white border border-slate-200 rounded-[2.5rem] p-10 shadow-sm">
+          <div className="flex items-center justify-between mb-6">
+              <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                  <span className="w-2 h-2 bg-blue-500 rounded-full" />
+                  Transmission Analytics
+              </h2>
+              <span className="text-sm font-black text-slate-900">{progress.sent} of {progress.total} Completed</span>
           </div>
-
-          <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-6">
-            <div className="text-red-400 text-sm mb-1 flex items-center gap-2">
-              <XCircle size={16} /> Failed
-            </div>
-            <div className="text-3xl font-bold text-red-400">{progress.failed}</div>
-          </div>
-
-          <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-6">
-            <div className="text-blue-400 text-sm mb-1">Success Rate</div>
-            <div className="text-3xl font-bold text-blue-400">{successRate}%</div>
-          </div>
-        </div>
-
-        {/* Progress Bar */}
-        <div className="bg-white/5 border border-white/10 rounded-2xl p-6 mb-8">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-slate-300">Overall Progress</span>
-            <span className="text-sm text-slate-400">{progress.sent} / {progress.total}</span>
-          </div>
-          <div className="h-4 bg-black/50 rounded-full overflow-hidden">
+          <div className="h-6 bg-slate-100 rounded-full overflow-hidden p-1 border border-slate-200/50 shadow-inner">
             <div
-              className="h-full bg-gradient-to-r from-green-500 to-emerald-400 transition-all duration-500"
+              className="h-full bg-blue-600 rounded-full transition-all duration-1000 shadow-[0_0_15px_rgba(37,99,235,0.4)]"
               style={{ width: `${successRate}%` }}
             />
           </div>
-        </div>
+      </section>
 
-        {/* Detailed Results */}
-        <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
-          <div className="p-6 border-b border-white/10">
-            <h2 className="text-xl font-semibold flex items-center gap-2">
-              <Mail size={20} className="text-blue-400" /> Detailed Results
-            </h2>
+      {/* Detailed Table */}
+      <div className="bg-white border border-slate-200 rounded-[2.5rem] overflow-hidden shadow-sm">
+          <div className="p-8 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+              <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest">Individual Logs</h2>
           </div>
 
-          <div className="max-h-96 overflow-y-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-white/5 sticky top-0">
-                <tr>
-                  <th className="px-6 py-4 font-medium text-slate-400">Status</th>
-                  <th className="px-6 py-4 font-medium text-slate-400">Email</th>
-                  <th className="px-6 py-4 font-medium text-slate-400">Details</th>
+          <div className="max-h-[500px] overflow-y-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-50/20">
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Transmission Status</th>
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Recipient</th>
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Server Response</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
+              <tbody className="divide-y divide-slate-50 bg-white font-sans">
                 {progress.results.map((result, i) => (
-                  <tr key={i} className="hover:bg-white/5">
-                    <td className="px-6 py-4">
+                  <tr key={i} className="group hover:bg-slate-50/50 transition-colors">
+                    <td className="px-8 py-5">
                       {result.success ? (
-                        <span className="inline-flex items-center gap-2 text-green-400">
-                          <CheckCircle size={16} /> Sent
-                        </span>
+                        <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-[10px] font-black uppercase tracking-widest border border-emerald-100/50">
+                           <CheckCircle size={14} /> Delivered
+                        </div>
                       ) : (
-                        <span className="inline-flex items-center gap-2 text-red-400">
-                          <XCircle size={16} /> Failed
-                        </span>
+                        <div className="inline-flex items-center gap-2 px-3 py-1 bg-red-50 text-red-600 rounded-full text-[10px] font-black uppercase tracking-widest border border-red-100/50">
+                           <XCircle size={14} /> Rejection
+                        </div>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-white">{result.email}</td>
-                    <td className="px-6 py-4 text-slate-400">
+                    <td className="px-8 py-5">
+                        <p className="font-black text-slate-900 leading-none">{result.email}</p>
+                    </td>
+                    <td className="px-8 py-5">
                       {result.success ? (
-                        <span className="text-slate-500">Delivered successfully</span>
+                        <p className="text-xs text-slate-400 font-medium tracking-tight italic">200 OK: Broadcast Successful</p>
                       ) : (
-                        <span className="text-red-400 text-xs">{result.error}</span>
+                        <p className="text-xs text-red-500 font-bold tracking-tight">{result.error}</p>
                       )}
                     </td>
                   </tr>
@@ -161,24 +158,23 @@ export default function EmailProgressPage() {
               </tbody>
             </table>
           </div>
-        </div>
+      </div>
 
-        {/* Action Buttons */}
-        <div className="flex flex-col sm:flex-row gap-4 mt-8">
+      {/* Final Actions */}
+      <div className="flex flex-col md:flex-row gap-6 items-center justify-center pt-8">
           <button
             onClick={handleViewStatus}
-            className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-full px-8 py-4 flex items-center justify-center gap-3 transition-all shadow-[0_0_30px_-5px_var(--color-blue-600)]"
+            className="bg-slate-900 hover:bg-black text-white font-black text-sm rounded-2xl px-12 py-5 flex items-center gap-3 transition-all shadow-xl active:scale-95"
           >
-            <RefreshCw size={20} /> View Interview Status
+            <RefreshCw size={18} /> Master Status Console
           </button>
 
           <Link
             href={`/admin/interviews/${interviewId}/send-email`}
-            className="flex-1 bg-white/10 hover:bg-white/20 text-white font-bold rounded-full px-8 py-4 flex items-center justify-center gap-3 transition-all border border-white/10"
+            className="bg-white border border-slate-200 hover:border-blue-500 text-slate-600 font-bold text-sm px-10 py-5 rounded-2xl transition-all shadow-sm active:scale-95 flex items-center gap-2"
           >
-            <Mail size={20} /> Resend Failed
+            <Send size={18} className="text-blue-500" /> Resubmit Failed Batches
           </Link>
-        </div>
       </div>
     </div>
   );

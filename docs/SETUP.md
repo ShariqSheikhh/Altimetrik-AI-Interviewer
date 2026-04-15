@@ -108,18 +108,18 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 ### AWS Bedrock Configuration
 
 ```env
-AWS_REGION=us-east-1
-AWS_ACCESS_KEY_ID=your-aws-access-key
-AWS_SECRET_ACCESS_KEY=your-aws-secret-key
-AWS_MODEL_NAME=amazon.nova-lite-v1:0
+REGION=us-east-1
+ACCESS_KEY_ID=your-aws-access-key
+SECRET_ACCESS_KEY=your-aws-secret-key
+MODEL_NAME=amazon.nova-lite-v1:0
 ```
 
 **How to get these:**
 1. Go to **AWS Console** → **IAM** → **Users**
 2. Create a user with `BedrockFullAccess` policy (or custom policy with `bedrock:InvokeModel`)
 3. Generate **Access Key ID** and **Secret Access Key** under the **Security credentials** tab
-4. Set `AWS_REGION` to your preferred region (e.g., `us-east-1`, `us-west-2`)
-5. `AWS_MODEL_NAME` defaults to `amazon.nova-lite-v1:0`. You can change this to other supported models.
+4. Set `REGION` to your preferred region (e.g., `us-east-1`, `us-west-2`)
+5. `MODEL_NAME` defaults to `amazon.nova-lite-v1:0`. You can change this to other supported models.
 
 **Supported models:** Any text model available in AWS Bedrock. Recommended:
 - `amazon.nova-lite-v1:0` (default, fast, cost-effective)
@@ -175,10 +175,10 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 
 # AWS Bedrock
-AWS_REGION=us-east-1
-AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
-AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
-AWS_MODEL_NAME=amazon.nova-lite-v1:0
+REGION=us-east-1
+ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+MODEL_NAME=amazon.nova-lite-v1:0
 
 # Support
 SUPPORT_MAIL=support@yourdomain.com
@@ -231,7 +231,7 @@ Visit http://localhost:3000 — you should see the landing page.
 **Cause:** Model access not enabled or invalid credentials.
 
 **Fix:**
-1. Verify `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` are correct
+1. Verify `ACCESS_KEY_ID` and `SECRET_ACCESS_KEY` are correct
 2. Go to AWS Console → Bedrock → Model Access and ensure the model is enabled
 3. Check IAM user has `bedrock:InvokeModel` permission
 

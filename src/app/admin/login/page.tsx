@@ -1,9 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { Users, Lock, Loader2 } from 'lucide-react';
+import { Lock, Loader2, Mail, ShieldCheck } from 'lucide-react';
+import Image from 'next/image';
+import logoImg from '../../icon.png';
 
 export default function AdminLogin() {
   const router = useRouter();
@@ -11,6 +13,20 @@ export default function AdminLogin() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
+
+  // If the admin is already logged in, redirect to dashboard immediately
+  useEffect(() => {
+    const checkExistingSession = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        router.replace('/admin/dashboard');
+      } else {
+        setCheckingSession(false);
+      }
+    };
+    checkExistingSession();
+  }, [router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,56 +50,82 @@ export default function AdminLogin() {
     }
   };
 
+  // Show loading while checking for an existing session
+  if (checkingSession) {
+    return (
+      <div className="min-h-screen bg-[#fcfdfd] flex items-center justify-center">
+        <Loader2 className="animate-spin text-blue-500" size={36} />
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-[#0a0f1c] flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-white/5 border border-white/10 rounded-3xl p-8 backdrop-blur-xl shadow-2xl">
-        <div className="flex flex-col items-center mb-8">
-          <div className="w-12 h-12 bg-blue-500/20 rounded-2xl flex items-center justify-center mb-4 border border-blue-500/30">
-            <Users className="text-blue-400" size={24} />
+    <div className="min-h-screen bg-[#fcfdfd] flex items-center justify-center p-4 font-sans relative overflow-hidden">
+      {/* Background decoration */}
+      <div className="absolute inset-0 bg-dot-pattern opacity-70 pointer-events-none z-0" />
+
+      <div className="w-full max-w-[440px] bg-white border border-slate-200 rounded-[2.5rem] p-10 shadow-[0_20px_50px_rgba(0,0,0,0.06)] relative z-10 animate-in fade-in zoom-in duration-300">
+        <div className="flex flex-col items-center mb-10">
+          <div className="w-20 h-20 bg-slate-50 border border-slate-100 rounded-3xl flex items-center justify-center mb-6 shadow-sm">
+             <Image src={logoImg} alt="Altimetrik" width={48} height={48} className="rounded-xl" />
           </div>
-          <h1 className="text-2xl font-bold text-white">Admin Dashboard</h1>
-          <p className="text-slate-400 mt-2 text-sm text-center">Sign in to manage interviews, candidates, and view evaluations.</p>
+          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Admin Console</h1>
+          <p className="text-slate-500 mt-3 text-sm text-center leading-relaxed">
+            Authorized personnel only. Access the interview management system.
+          </p>
         </div>
 
         {error && (
-          <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-xl mb-6 text-sm text-center">
+          <div className="bg-red-50 border border-red-100 text-red-600 px-4 py-3 rounded-2xl mb-8 text-sm text-center font-medium animate-in slide-in-from-top-2">
             {error}
           </div>
         )}
 
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">Admin Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
-              placeholder="admin@example.com"
-            />
+        <form onSubmit={handleLogin} className="space-y-6">
+          <div className="space-y-2">
+            <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Admin Email</label>
+            <div className="relative">
+              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-4 py-4 text-slate-800 placeholder:text-slate-300 focus:outline-none focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/5 transition-all outline-none"
+                placeholder="admin@example.com"
+              />
+            </div>
           </div>
           
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
-              placeholder="••••••••"
-            />
+          <div className="space-y-2">
+            <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Password</label>
+            <div className="relative">
+              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-4 py-4 text-slate-800 placeholder:text-slate-300 focus:outline-none focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/5 transition-all outline-none"
+                placeholder="••••••••"
+              />
+            </div>
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-xl px-4 py-3 flex items-center justify-center gap-2 transition-all mt-4 disabled:opacity-50"
+            className="w-full bg-slate-900 hover:bg-black text-white font-bold rounded-[1.25rem] px-4 py-4.5 flex items-center justify-center gap-3 transition-all mt-4 disabled:opacity-50 shadow-lg active:scale-[0.98]"
           >
-            {loading ? <Loader2 className="animate-spin" size={20} /> : <><Lock size={20} /> Secure Login</>}
+            {loading ? <Loader2 className="animate-spin" size={24} /> : <><ShieldCheck size={20} /> Authorize Access</>}
           </button>
         </form>
+
+        <div className="mt-12 text-center">
+            <p className="text-xs text-slate-400 font-medium tracking-wide">
+                &copy; {new Date().getFullYear()} Altimetrik Protected System
+            </p>
+        </div>
       </div>
     </div>
   );
