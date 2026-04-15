@@ -17,6 +17,12 @@ export default function InterviewRoom() {
   const [isStarted, setIsStarted] = useState(false);
   const [showInstructions, setShowInstructions] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
+  const [showWarning, setShowWarning] = useState(false);
+  const [warningMsg, setWarningMsg] = useState('');
+  const [showFullscreenPrompt, setShowFullscreenPrompt] = useState(false);
+  const [tabSwitchCount, setTabSwitchCount] = useState(0);
+  const [showTabWarning, setShowTabWarning] = useState(false);
+  const [fullscreenExitCount, setFullscreenExitCount] = useState(0);
   const [supportEmail, setSupportEmail] = useState('');
   const [isUploadComplete, setIsUploadComplete] = useState(
     () => typeof window !== 'undefined' && sessionStorage.getItem('interview_done') === 'true'
@@ -32,6 +38,7 @@ export default function InterviewRoom() {
   const recordedChunks = useRef<Blob[]>([]);
   const recognitionRef = useRef<any>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const isListeningRef = useRef(false); // ref mirror of isListening — safe to read in closures
 
   const questionIndex = useRef(-1);
   const candidateAnswers = useRef<{ q: string, a: string, followUp?: string, followUpAnswer?: string }[]>([]);
@@ -48,6 +55,135 @@ export default function InterviewRoom() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [transcript, currentAnswer]);
+
+  // ── Security: Fullscreen enforcement ─────────────────────────────
+  const isInterviewActive = useRef(false);
+
+  const enterFullscreen = () => {
+    const el = document.documentElement;
+    if (el.requestFullscreen) el.requestFullscreen();
+    else if ((el as any).webkitRequestFullscreen) (el as any).webkitRequestFullscreen();
+    else if ((el as any).mozRequestFullScreen) (el as any).mozRequestFullScreen();
+    else if ((el as any).msRequestFullscreen) (el as any).msRequestFullscreen();
+  };
+
+  const showSecurityWarning = (msg: string) => {
+    setWarningMsg(msg);
+    setShowWarning(true);
+    setTimeout(() => setShowWarning(false), 3000);
+  };
+
+  // Block fullscreen exit
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const isFs =
+        !!document.fullscreenElement ||
+        !!(document as any).webkitFullscreenElement ||
+        !!(document as any).mozFullScreenElement ||
+        !!(document as any).msFullscreenElement;
+
+      if (isInterviewActive.current) {
+        if (!isFs) {
+          // Candidate exited fullscreen, count the violation
+          setFullscreenExitCount(prev => prev + 1);
+          // ⚠️ Cannot call requestFullscreen() here — browsers require a direct
+          // user gesture (click). Show a blocking overlay instead; the button
+          // inside it will call enterFullscreen() as a valid user gesture.
+          setShowFullscreenPrompt(true);
+        } else {
+          // Fullscreen restored (e.g. candidate clicked the button)
+          setShowFullscreenPrompt(false);
+        }
+      }
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
+    };
+  }, []);
+
+  // ── Security: Block keyboard shortcuts ───────────────────────────
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const key = e.key;
+      const ctrl = e.ctrlKey || e.metaKey;
+      const shift = e.shiftKey;
+
+      // ─ Block DevTools shortcuts
+      if (key === 'F12') { e.preventDefault(); e.stopPropagation(); return; }
+      if (ctrl && shift && ['I', 'i', 'J', 'j', 'C', 'c'].includes(key)) { e.preventDefault(); e.stopPropagation(); return; }
+      if (ctrl && ['U', 'u'].includes(key)) { e.preventDefault(); e.stopPropagation(); return; }
+      if (ctrl && ['S', 's'].includes(key)) { e.preventDefault(); e.stopPropagation(); return; }
+      if (ctrl && ['P', 'p'].includes(key)) { e.preventDefault(); e.stopPropagation(); return; }
+
+      // ─ Block page refresh
+      if (key === 'F5') { e.preventDefault(); e.stopPropagation(); return; }
+      if (ctrl && ['R', 'r'].includes(key)) { e.preventDefault(); e.stopPropagation(); return; }
+      if (ctrl && shift && ['R', 'r'].includes(key)) { e.preventDefault(); e.stopPropagation(); return; }
+
+      // ─ Block fullscreen exit keys — only during active interview
+      if (isInterviewActive.current) {
+        if (key === 'Escape') { e.preventDefault(); e.stopPropagation(); enterFullscreen(); return; }
+        if (['F', 'f', 'F11'].includes(key) && !ctrl && !shift) { e.preventDefault(); e.stopPropagation(); return; }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown, true);
+    return () => document.removeEventListener('keydown', handleKeyDown, true);
+  }, []);
+
+  // ── Security: Block right-click context menu ──────────────────────
+  useEffect(() => {
+    const handleContextMenu = (e: MouseEvent) => { e.preventDefault(); };
+    document.addEventListener('contextmenu', handleContextMenu);
+    return () => document.removeEventListener('contextmenu', handleContextMenu);
+  }, []);
+
+  // ── Security: Warn on page unload / refresh ───────────────────────
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isInterviewActive.current) {
+        e.preventDefault();
+        e.returnValue = 'Your interview is in progress. Leaving will forfeit your session.';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
+  // ── Security: Detect tab switching (separate from fullscreen) ───────
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden && isInterviewActive.current) {
+        // Increment violation counter and show a temporary amber toast
+        setTabSwitchCount(prev => prev + 1);
+        setShowTabWarning(true);
+        setTimeout(() => setShowTabWarning(false), 4000);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
+
+  // ── Auto-enter fullscreen on first interaction after exit ──────────
+  // pointerdown IS a trusted user gesture — requestFullscreen() succeeds.
+  // This fires the instant the candidate interacts with anything on the
+  // overlay (or anywhere on the page), without them needing to find and
+  // explicitly click a button.
+  useEffect(() => {
+    if (!showFullscreenPrompt) return;
+    const handler = () => { enterFullscreen(); };
+    document.addEventListener('pointerdown', handler, { once: true, capture: true });
+    return () => document.removeEventListener('pointerdown', handler, true);
+  }, [showFullscreenPrompt]);
 
   // Fetch support email from server-side API
   useEffect(() => {
@@ -104,6 +240,17 @@ export default function InterviewRoom() {
         }
         if (finalTrans) finalizedTextRef.current += ' ' + finalTrans;
         setCurrentAnswer((finalizedTextRef.current + ' ' + interimTrans).trim());
+      };
+
+      // ── Auto-restart on silence / browser timeout ────────────────────
+      // The Web Speech API fires 'onend' after ~5-10s of silence even with
+      // continuous:true. We restart it transparently so long pauses don't
+      // break the session. We only restart when isListeningRef says we
+      // should still be listening (i.e. candidate hasn't pressed Submit).
+      recognitionRef.current.onend = () => {
+        if (isListeningRef.current) {
+          try { recognitionRef.current?.start(); } catch (e) { }
+        }
       };
     }
 
@@ -204,7 +351,7 @@ export default function InterviewRoom() {
     if (!processed) return;
     const chunks = splitIntoChunks(processed);
     for (let i = 0; i < chunks.length; i++) {
-        await speakChunk(chunks[i].trim(), i, chunks.length);
+      await speakChunk(chunks[i].trim(), i, chunks.length);
     }
   };
 
@@ -352,6 +499,7 @@ export default function InterviewRoom() {
     finalizedTextRef.current = '';
     if (recognitionRef.current) {
       try {
+        isListeningRef.current = true;
         setIsListening(true);
         recognitionRef.current.start();
       } catch (e) { }
@@ -361,6 +509,7 @@ export default function InterviewRoom() {
   // ── Submit answer → Evaluator 1 decides next step ────────────────
   const submitAnswer = async () => {
     if (recognitionRef.current) {
+      isListeningRef.current = false; // prevent onend from restarting
       setIsListening(false);
       recognitionRef.current.stop();
     }
@@ -430,6 +579,9 @@ export default function InterviewRoom() {
   const startInterviewProcess = async () => {
     setShowInstructions(false);
     setIsStarted(true);
+    isInterviewActive.current = true;
+    // Enter fullscreen when interview starts
+    enterFullscreen();
     if (stream) {
       mediaRecorderRef.current = new MediaRecorder(stream);
       mediaRecorderRef.current.ondataavailable = (e) => {
@@ -523,12 +675,12 @@ export default function InterviewRoom() {
               fileType: videoBlob.type || 'video/webm'
             }),
           });
-          
+
           const presignData = await presignRes.json();
-          
+
           if (presignRes.ok && presignData.signedUrl) {
             setSavingStatus('Uploading session recording direct to S3...');
-            
+
             const uploadRes = await fetch(presignData.signedUrl, {
               method: 'PUT',
               body: videoBlob,
@@ -558,30 +710,93 @@ export default function InterviewRoom() {
       }
     }
 
+    const finalEvaluation = {
+      ...evaluationResult,
+      security_violations: {
+        tab_switches: tabSwitchCount,
+        fullscreen_exits: fullscreenExitCount
+      }
+    };
+
     try {
       await supabase.from('results').insert([{
         candidate_id: candidate.id,
         interview_id: interview.id,
-        evaluation: evaluationResult,
+        evaluation: finalEvaluation,
         transcript_data: { full_transcript: candidateAnswers.current.filter((item) => item.a !== '') },
         video_url: finalVideoUrl || null
       }]);
 
       setSavingStatus('Your results are saved securely.');
       sessionStorage.setItem('interview_done', 'true');
+      isInterviewActive.current = false; // Allow page to reset safely
       streamRef.current?.getTracks().forEach(t => t.stop());
       try { recognitionRef.current?.stop(); } catch (e) { }
+      // Exit fullscreen before reload
+      if (document.exitFullscreen) document.exitFullscreen().catch(() => { });
       window.location.reload();
     } catch (err) {
       setSavingStatus('Server error saving. Please contact admin.');
       sessionStorage.setItem('interview_done', 'true');
+      isInterviewActive.current = false;
       streamRef.current?.getTracks().forEach(t => t.stop());
+      if (document.exitFullscreen) document.exitFullscreen().catch(() => { });
       window.location.reload();
     }
   };
 
   return (
     <div className="h-screen overflow-hidden bg-[#fcfdfd] text-slate-800 flex flex-col font-sans">
+
+      {/* ── Security Warning Toast ─────────────────────────────── */}
+      {showWarning && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-3 bg-red-600 text-white px-6 py-3 rounded-2xl shadow-2xl animate-in slide-in-from-top-4 duration-300 text-sm font-semibold">
+          <span>{warningMsg}</span>
+        </div>
+      )}
+
+      {/* ── Tab Switch Violation Toast (separate, non-blocking) ── */}
+      {showTabWarning && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-3 bg-amber-500 text-white px-6 py-3 rounded-2xl shadow-2xl animate-in slide-in-from-top-4 duration-300 text-sm font-semibold">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+            <line x1="12" y1="9" x2="12" y2="13" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+          <span>Tab switch detected — Violation #{tabSwitchCount}</span>
+        </div>
+      )}
+
+      {/* ── Fullscreen Re-entry Prompt (blocking, auto-enters on any click) */}
+      {showFullscreenPrompt && (
+        <div
+          className="fixed inset-0 z-[99999] bg-slate-900/95 backdrop-blur-md flex flex-col items-center justify-center gap-8 text-center px-8 cursor-pointer"
+          onClick={() => enterFullscreen()}
+        >
+          <div className="w-24 h-24 rounded-3xl bg-red-500/20 border border-red-400/30 flex items-center justify-center mb-2 animate-pulse">
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-red-400">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3" /><path d="M21 8V5a2 2 0 0 0-2-2h-3" />
+              <path d="M3 16v3a2 2 0 0 0 2 2h3" /><path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+            </svg>
+          </div>
+          <div className="space-y-3">
+            <h2 className="text-3xl font-bold text-white tracking-tight">Fullscreen Required</h2>
+            <p className="text-slate-300 text-base max-w-sm leading-relaxed">
+              You exited fullscreen. The interview is paused.
+            </p>
+          </div>
+          <div className="bg-blue-600 text-white font-bold px-10 py-4 rounded-2xl text-lg shadow-2xl shadow-blue-900/40 flex items-center gap-3">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3" /><path d="M21 8V5a2 2 0 0 0-2-2h-3" />
+              <path d="M3 16v3a2 2 0 0 0 2 2h3" /><path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+            </svg>
+            Click anywhere to return to Fullscreen
+          </div>
+          <p className="text-slate-600 text-xs">
+            Exiting fullscreen during the interview may be flagged as a violation.
+          </p>
+        </div>
+      )}
       <header className="px-6 py-4 flex items-center justify-between border-b border-slate-200 bg-white/70 backdrop-blur-md shrink-0 z-50">
         <div className="flex items-center gap-3">
           <Image src={logoImg} alt="Altimetrik" width={32} height={32} className="w-8 h-8 rounded-lg" />
@@ -598,7 +813,7 @@ export default function InterviewRoom() {
               <User size={14} className="text-blue-600" />
             </div>
             <span className="text-sm font-medium text-slate-600">
-               {candidate?.name || 'Candidate'}
+              {candidate?.name || 'Candidate'}
             </span>
           </div>
 
@@ -649,11 +864,11 @@ export default function InterviewRoom() {
                     { icon: <AlertTriangle className="text-amber-500" size={20} />, title: 'Stay on Page', desc: 'Do not refresh or close the tab.' }
                   ].map((item, i) => (
                     <div key={i} className="p-5 bg-slate-50 border border-slate-100 rounded-2xl flex gap-4">
-                        <div className="p-2 bg-white rounded-xl shadow-sm h-fit">{item.icon}</div>
-                        <div>
-                          <h4 className="font-bold text-slate-800 text-sm mb-1">{item.title}</h4>
-                          <p className="text-xs text-slate-500 leading-normal">{item.desc}</p>
-                        </div>
+                      <div className="p-2 bg-white rounded-xl shadow-sm h-fit">{item.icon}</div>
+                      <div>
+                        <h4 className="font-bold text-slate-800 text-sm mb-1">{item.title}</h4>
+                        <p className="text-xs text-slate-500 leading-normal">{item.desc}</p>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -677,10 +892,10 @@ export default function InterviewRoom() {
 
           {isCompleted && (
             <div className="absolute inset-0 bg-white/95 backdrop-blur-xl flex flex-col items-center justify-center p-8 text-center z-[100] animate-in fade-in duration-500">
-               <div className="w-24 h-24 bg-blue-50 rounded-[2.5rem] flex items-center justify-center mb-8 shadow-inner">
-                  <ShieldCheck size={48} className="text-blue-600 animate-bounce" />
-               </div>
-              
+              <div className="w-24 h-24 bg-blue-50 rounded-[2.5rem] flex items-center justify-center mb-8 shadow-inner">
+                <ShieldCheck size={48} className="text-blue-600 animate-bounce" />
+              </div>
+
               <h2 className="text-4xl font-bold mb-3 text-slate-900 tracking-tight">
                 {isUploadComplete ? 'Assessment Complete!' : 'Finalizing...'}
               </h2>
@@ -733,8 +948,8 @@ export default function InterviewRoom() {
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
             {transcript.length === 0 && !currentAnswer && (
               <div className="h-full flex flex-col items-center justify-center opacity-30 text-slate-400 p-8">
-                 <Mic size={40} className="mb-4" />
-                 <p className="text-sm font-medium">Interview haven't started yet</p>
+                <Mic size={40} className="mb-4" />
+                <p className="text-sm font-medium">Interview haven't started yet</p>
               </div>
             )}
             {transcript.map((msg, i) => (

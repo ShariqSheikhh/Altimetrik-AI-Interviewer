@@ -265,6 +265,23 @@ export default function ResultDetails() {
                 )}
               </div>
 
+              {/* Integrity & Security */}
+              <div className="bg-white border border-slate-200 rounded-[2.5rem] p-8 shadow-sm">
+                 <h3 className="font-bold text-slate-900 flex items-center gap-2 mb-6 border-b border-slate-50 pb-4">
+                    <ShieldAlert size={18} className="text-amber-500" /> Security Violations
+                 </h3>
+                 <div className="space-y-4">
+                     <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                         <span className="text-sm font-bold text-slate-700">Tab Switches</span>
+                         <span className="text-lg font-black text-amber-600">{result.evaluation?.security_violations?.tab_switches || 0}</span>
+                     </div>
+                     <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                         <span className="text-sm font-bold text-slate-700">Fullscreen Exits</span>
+                         <span className="text-lg font-black text-amber-600">{result.evaluation?.security_violations?.fullscreen_exits || 0}</span>
+                     </div>
+                 </div>
+              </div>
+
               {/* Candidate Info Card */}
               <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden group">
                    <h3 className="text-lg font-bold mb-8 flex items-center gap-2 relative z-10">
