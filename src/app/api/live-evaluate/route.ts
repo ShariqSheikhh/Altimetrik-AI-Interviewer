@@ -59,7 +59,7 @@ ${sanitizedFollowUp ? `\n## Candidate's Follow-up Answer:\n${sanitizedFollowUp}`
 Analyze the candidate's answer(s) and determine which key points were covered and which were missed.
 
 Then decide:
-- "move_next" — MANDATORY if ALL key points are covered in the candidate's answer. If the candidate has successfully demonstrated understanding of the required key points, you MUST choose "move_next". Do NOT ask follow-ups just for the sake of it.
+- "move_next" — MANDATORY if ALL or 80% of the key points are covered in the candidate's answer. If the candidate has successfully demonstrated understanding of the required key points, you MUST choose "move_next". Do NOT ask follow-ups just for the sake of it.
 - "follow_up" — ONLY if ONE OR MORE key points are CLEARLY MISSING BUT the answer is in the right context (partially correct). Generate a natural follow-up question that specifically asks about the MISSED key points to see if the candidate knows them, WITHOUT revealing the answer.
 - "skip" — if the answer is COMPLETELY off-topic, out of context from the very beginning, or if they explicitly say they don't know. No follow-up needed.
 

@@ -162,14 +162,33 @@ export async function POST(req: Request) {
       ${JSON.stringify(sanitizedTranscript, null, 2)}
 
       ## Your Task — Rubric Evaluation
-      Evaluate the candidate across these 4 rubric criteria:
+      Evaluate the candidate across these 4 rubric criteria using the following scoring policies:
 
-      1. **Communication Clarity (0-25)**: Logical flow, sentence structure, and ability to convey ideas without ambiguity or contradiction.
-      2. **Relevance & Depth of Response (0-25)**: How directly the answer addresses the question, with substantive insight rather than surface-level filler.
-      3. **Problem-Solving & Critical Thinking (0-25)**: Reasoning through scenarios, weighing trade-offs, and arriving at well-justified conclusions.
-      4. **Specificity & Use of Examples (0-25)**: Backing claims with concrete examples, data, or past experiences rather than vague generalities.
+      1. **Communication Clarity (0-25)**:
+         - 20-25: Answer is structured, logically flowing, easy to understand and has no internal contradictions.
+         - 15-19: Mostly correct coverage, but no clear language, feels like candidate is rambling with approximate context.
+         - 10-14: Candidate is speaking superficially, lack of actual knowledge is visible, seems to jumble correct sounding words together to form answers.
+         - 0-9: Not able to form correct sentences, answer contains self-contradictions, or was not able to answer the question.
 
-      Compare the candidate's answers against the expected answers to judge quality.
+      2. **Relevance & Depth of Response (0-25)**:
+         - 20-25: Direct, substantive, and insightful answers that precisely address the core of the question with great depth.
+         - 15-19: Generally relevant but might include minor tangents or surface-level filler without fully diving deep into the core issue.
+         - 10-14: Mostly surface-level observations; often misses the underlying point of the question and focuses on somewhat irrelevant details.
+         - 0-9: Completely off-topic, evasive, or entirely composed of filler with zero relevance to the asked question.
+
+      3. **Problem-Solving & Critical Thinking (0-25)**:
+         - 20-25: Demonstrates strong logical reasoning, effectively weighs trade-offs, and arrives at well-justified, optimal conclusions.
+         - 15-19: Shows some logical reasoning but may overlook key edge cases or trade-offs; conclusions are decent but not fully robust.
+         - 10-14: Struggles to outline a clear path to a solution; uses generic, memorized approaches without showing much critical evaluation.
+         - 0-9: Fails to demonstrate basic reasoning; unable to navigate the problem, relies on guesswork, or provides illogical conclusions.
+
+      4. **Specificity & Use of Examples (0-25)**:
+         - 20-25: Consistently backs up claims with highly relevant, concrete examples, specific technical details, or exact past experiences.
+         - 15-19: Provides some examples, but they might be slightly generic or lack precise details to fully support the claims.
+         - 10-14: Rarely uses examples, relies largely on vague generalizations; when examples are given, they are purely theoretical or loose.
+         - 0-9: Completely lacks examples or specificity; relies entirely on theoretical fluff and vague terms without grounding in real context.
+
+      Compare the candidate's answers against the expected answers to judge quality based on these bands.
 
       You MUST return your evaluation strictly as a JSON object matching this exact schema, without any markdown formatting wrappers or extra text:
       {
