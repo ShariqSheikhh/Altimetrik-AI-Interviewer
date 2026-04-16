@@ -128,18 +128,27 @@ function validateEvaluation(raw: any, coverageData: any, followUpData: any, tota
 }
 
 export async function POST(req: Request) {
+  console.log(`\n================= [FINAL EVALUATOR API: START] =================`);
   try {
     const body = await req.json();
     const { questionBank, previousContext, coverageData, followUpData } = body;
+    console.log(`[Evaluate] Received final evaluation request.`);
+    console.log(`[Evaluate] Question Bank Size: ${questionBank?.length}`);
+    console.log(`[Evaluate] Transcript Context Items: ${previousContext?.length}`);
+    console.log(`[Evaluate] Provided Coverage avg: ${coverageData?.average_coverage}`);
+    console.log(`[Evaluate] Provided Follow-up counts: ${followUpData?.questions_with_follow_ups}`);
 
     if (!Array.isArray(questionBank) || questionBank.length === 0) {
+      console.log(`[Evaluate] Error: Invalid or empty question bank`);
       return NextResponse.json({ error: 'Invalid or empty question bank' }, { status: 400 });
     }
     if (!Array.isArray(previousContext) || previousContext.length === 0) {
+      console.log(`[Evaluate] Error: Invalid or empty transcript`);
       return NextResponse.json({ error: 'Invalid or empty transcript' }, { status: 400 });
     }
 
     if (!process.env.ACCESS_KEY_ID) {
+      console.log(`[Evaluate] Error: AWS credentials not configured`);
       return NextResponse.json({
         evaluation: { score: 0, feedback: "AWS credentials not configured." }
       });
@@ -219,9 +228,22 @@ export async function POST(req: Request) {
       ],
       inferenceConfig: {
         maxTokens: 4096,
-        temperature: 0,
+        temperature: 0.1,
       },
     };
+
+    console.log(`[Evaluate] Invoking AWS Bedrock: ${MODEL_ID}`);
+    console.log(`[Evaluate] --- LLM PROMPT PAYLOAD (SENT) ---`);
+    console.log(`[..System prompt..]
+
+## Questions and Expected Answers:
+${questionsForEval}
+
+## Full Interview Transcript:
+${JSON.stringify(sanitizedTranscript, null, 2)}
+
+[..Rubric criteria and output instructions..]`);
+    console.log(`--------------------------------------------`);
 
     const command = new InvokeModelCommand({
       modelId: MODEL_ID,
@@ -234,6 +256,10 @@ export async function POST(req: Request) {
     const responseBody = JSON.parse(new TextDecoder().decode(response.body));
     let text = responseBody.output?.message?.content?.[0]?.text || '{}';
 
+    console.log(`[Evaluate] --- LLM RAW RESPONSE (RECEIVED) ---`);
+    console.log(text);
+    console.log(`----------------------------------------------`);
+
     // Strip markdown wrappers
     if (text.trimStart().startsWith('\`\`\`json')) {
       text = text.replace(/^[\s]*\`\`\`json\s*/, '').replace(/\s*\`\`\`[\s]*$/, '');
@@ -244,6 +270,7 @@ export async function POST(req: Request) {
     let evaluation;
     try {
       const parsed = JSON.parse(text);
+      console.log(`[Evaluate] Successfully parsed LLM JSON response.`);
       evaluation = validateEvaluation(
         parsed,
         coverageData || { average_coverage: 0, per_question: [] },
@@ -251,13 +278,21 @@ export async function POST(req: Request) {
         questionBank.length
       );
     } catch (e) {
+      console.log(`[Evaluate] FALLBACK: Failed to parse LLM response. Raw text was:`, text);
       console.error('[Evaluate] Parse error:', e);
       evaluation = { score: 0, feedback: text, per_question_results: [] };
     }
 
+    console.log(`[Evaluate] --- FINAL API RESPONSE OVERVIEW ---`);
+    console.log(`Final Evaluation Score: ${evaluation.score || 0}`);
+    console.log(`Computed Score Details:\n${JSON.stringify(evaluation.scoring, null, 2)}`);
+    console.log(`===============================================================\n`);
+
     return NextResponse.json({ evaluation });
   } catch (error: any) {
-    console.error('Evaluator API Error:', error);
+    console.log(`[Evaluate] FALLBACK SEVERE ERROR: Caught unhandled API error!`);
+    console.log(`[Evaluate] Error Stack:`, error);
+    console.log(`===============================================================\n`);
     return NextResponse.json({ error: 'An internal error occurred during evaluation.' }, { status: 500 });
   }
 }

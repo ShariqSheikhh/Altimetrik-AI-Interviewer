@@ -22,15 +22,25 @@ function sanitize(text: string): string {
 }
 
 export async function POST(req: Request) {
+  console.log(`\n================= [LIVE EVALUATOR API: START] =================`);
   try {
     const body = await req.json();
     const { question, candidateAnswer, keyPoints, followUpAnswer } = body;
+    console.log(`[LiveEvaluate] Received live evaluation request.`);
+    console.log(`[LiveEvaluate] Question: ${question}`);
+    console.log(`[LiveEvaluate] Expected Key Points: ${keyPoints?.length || 0}`);
+    console.log(`[LiveEvaluate] Candidate Answer: ${candidateAnswer}`);
+    if (followUpAnswer) {
+      console.log(`[LiveEvaluate] Additional Follow-Up Answer: ${followUpAnswer}`);
+    }
 
     if (!question || !candidateAnswer || !Array.isArray(keyPoints) || keyPoints.length === 0) {
+      console.log(`[LiveEvaluate] Error: Missing required fields`);
       return NextResponse.json({ error: 'Missing required fields: question, candidateAnswer, keyPoints' }, { status: 400 });
     }
 
     if (!process.env.ACCESS_KEY_ID) {
+      console.log(`[LiveEvaluate] Error: AWS credentials missing`);
       return NextResponse.json({
         decision: 'move_next',
         covered_points: [],
@@ -86,10 +96,27 @@ You MUST return ONLY a valid JSON object (no markdown, no extra text):
         },
       ],
       inferenceConfig: {
-        maxTokens: 1024,
-        temperature: 0,
+        maxTokens: 500,
+        temperature: 0.1,
       },
     };
+
+    console.log(`[LiveEvaluate] Invoking AWS Bedrock: ${MODEL_ID}`);
+    console.log(`[LiveEvaluate] --- LLM PROMPT PAYLOAD (SENT) ---`);
+    console.log(`[..System prompt..]
+
+## The Question Asked:
+${sanitizedQuestion}
+
+## Required Key Points (that the candidate MUST cover):
+${keyPoints.map((kp: string, i: number) => `${i + 1}. ${kp}`).join('\n')}
+
+## Candidate's Primary Answer:
+${sanitizedAnswer}
+${sanitizedFollowUp ? `\n## Candidate's Follow-up Answer:\n${sanitizedFollowUp}` : ''}
+
+[..System Instructions & Formatting..]`);
+    console.log(`------------------------------------------------`);
 
     const command = new InvokeModelCommand({
       modelId: MODEL_ID,
@@ -102,6 +129,10 @@ You MUST return ONLY a valid JSON object (no markdown, no extra text):
     const responseBody = JSON.parse(new TextDecoder().decode(response.body));
     let rawText = responseBody.output?.message?.content?.[0]?.text?.trim() || '{}';
 
+    console.log(`[LiveEvaluate] --- LLM RAW RESPONSE (RECEIVED) ---`);
+    console.log(rawText);
+    console.log(`--------------------------------------------------`);
+
     // Strip markdown wrappers if present
     if (rawText.startsWith('```json')) {
       rawText = rawText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
@@ -112,8 +143,9 @@ You MUST return ONLY a valid JSON object (no markdown, no extra text):
     let parsed;
     try {
       parsed = JSON.parse(rawText);
+      console.log(`[LiveEvaluate] Successfully parsed LLM JSON response.`);
     } catch (e) {
-      console.error('[LiveEvaluate] Failed to parse LLM response:', rawText);
+      console.log(`[LiveEvaluate] FALLBACK: Failed to parse LLM response. Defaulting to move_next. Raw Text was:`, rawText);
       // Default: move to next question on parse failure
       parsed = {
         decision: 'move_next',
@@ -131,6 +163,16 @@ You MUST return ONLY a valid JSON object (no markdown, no extra text):
     // If this was already a follow-up answer, force move_next
     const finalDecision = sanitizedFollowUp ? 'move_next' : decision;
 
+    console.log(`[LiveEvaluate] --- FINAL API RESPONSE OVERVIEW ---`);
+    console.log(`Decision: ${finalDecision}`);
+    console.log(`Coverage %: ${parsed.coverage_percentage}`);
+    console.log(`Covered Points: ${parsed.covered_points?.length || 0}`);
+    console.log(`Missed Points: ${parsed.missed_points?.length || 0}`);
+    if (finalDecision === 'follow_up') {
+      console.log(`Follow-up Question generated: ${parsed.follow_up_question}`);
+    }
+    console.log(`===============================================================\n`);
+
     return NextResponse.json({
       decision: finalDecision,
       covered_points: Array.isArray(parsed.covered_points) ? parsed.covered_points : [],
@@ -141,7 +183,9 @@ You MUST return ONLY a valid JSON object (no markdown, no extra text):
       follow_up_question: finalDecision === 'follow_up' ? (parsed.follow_up_question || '') : '',
     });
   } catch (error: any) {
-    console.error('Live Evaluate API Error:', error);
+    console.log(`[LiveEvaluate] FALLBACK SEVERE ERROR: Caught unhandled API error!`);
+    console.log(`[LiveEvaluate] Error Stack:`, error);
+    console.log(`===============================================================\n`);
     return NextResponse.json({ error: 'An internal error occurred during live evaluation.' }, { status: 500 });
   }
 }
