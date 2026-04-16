@@ -106,6 +106,7 @@ function validateEvaluation(raw: any, coverageData: any, followUpData: any, tota
 
     evaluation.per_question_results.push({
       question_index: i,
+      redirected: coveragePercentage === 0 && followUpCount > 0, // candidate was off-topic and redirected
       rubrics: {
         communication: { score: rubricScores.communication, feedback: typeof communication.feedback === 'string' ? communication.feedback : '' },
         relevance: { score: rubricScores.relevance, feedback: typeof relevance.feedback === 'string' ? relevance.feedback : '' },
@@ -159,18 +160,18 @@ export async function POST(req: Request) {
     const questionsForEval = questionBank.map((q: any, i: number) => {
       const questionText = typeof q === 'string' ? q : q.question || '';
       const answerText = typeof q === 'string' ? '' : q.answer || '';
-      return \`Question ID \${i}: \${questionText}\nExpected Answer: \${answerText}\`;
+      return `Question ID ${i}: ${questionText}\nExpected Answer: ${answerText}`;
     }).join('\n\n');
 
-    const prompt = \`
+    const prompt = `
       You are an expert Interview Evaluator (Evaluator 2 — Final Scoring).
       Your job is to evaluate the candidate's performance QUESTION-BY-QUESTION based on RUBRIC criteria.
 
       ## Questions and Expected Answers:
-      \${questionsForEval}
+      ${questionsForEval}
 
       ## Full Interview Transcript:
-      \${JSON.stringify(sanitizedTranscript, null, 2)}
+      ${JSON.stringify(sanitizedTranscript, null, 2)}
 
       ## Your Task — Rubric Evaluation (Per Question)
       For EACH question ID listed above, find the candidate's answer(s) in the transcript.
@@ -216,7 +217,7 @@ export async function POST(req: Request) {
 
       Generate an entry in the "per_question_aspects" array for EVERY question.
       Return ONLY the valid JSON object, no other text.
-    \`;
+    `;
 
     const payload = {
       schemaVersion: "messages-v1",
@@ -261,10 +262,10 @@ ${JSON.stringify(sanitizedTranscript, null, 2)}
     console.log(`----------------------------------------------`);
 
     // Strip markdown wrappers
-    if (text.trimStart().startsWith('\`\`\`json')) {
-      text = text.replace(/^[\s]*\`\`\`json\s*/, '').replace(/\s*\`\`\`[\s]*$/, '');
-    } else if (text.trimStart().startsWith('\`\`\`')) {
-      text = text.replace(/^[\s]*\`\`\`\s*/, '').replace(/\s*\`\`\`[\s]*$/, '');
+    if (text.trimStart().startsWith('```json')) {
+      text = text.replace(/^[\s]*```json\s*/, '').replace(/\s*```[\s]*$/, '');
+    } else if (text.trimStart().startsWith('```')) {
+      text = text.replace(/^[\s]*```\s*/, '').replace(/\s*```[\s]*$/, '');
     }
 
     let evaluation;
@@ -285,7 +286,7 @@ ${JSON.stringify(sanitizedTranscript, null, 2)}
 
     console.log(`[Evaluate] --- FINAL API RESPONSE OVERVIEW ---`);
     console.log(`Final Evaluation Score: ${evaluation.score || 0}`);
-    console.log(`Computed Score Details:\n${JSON.stringify(evaluation.scoring, null, 2)}`);
+    console.log(`Computed Score Details:\n${JSON.stringify(evaluation.per_question_results, null, 2)}`);
     console.log(`===============================================================\n`);
 
     return NextResponse.json({ evaluation });

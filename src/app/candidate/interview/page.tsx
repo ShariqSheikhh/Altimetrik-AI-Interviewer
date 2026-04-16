@@ -420,7 +420,7 @@ export default function InterviewRoom() {
   };
 
   // ── Ask the Interviewer for next response ────────────────────────
-  const askInterviewer = async (currentTranscript: any[], followUpInstruction?: string) => {
+  const askInterviewer = async (currentTranscript: any[], followUpInstruction?: string, expectedNextQuestion?: string, repeatQuestionText?: string) => {
     try {
       const res = await fetch('/api/interviewer', {
         method: 'POST',
@@ -431,6 +431,8 @@ export default function InterviewRoom() {
           transcript: currentTranscript,
           candidateName: candidate?.name,
           ...(followUpInstruction ? { followUpInstruction } : {}),
+          ...(expectedNextQuestion ? { nextQuestionText: expectedNextQuestion } : {}),
+          ...(repeatQuestionText ? { repeatQuestionText } : {}),
         }),
       });
 
@@ -472,7 +474,13 @@ export default function InterviewRoom() {
 
   // ── Main flow: Ask the next question ─────────────────────────────
   const askNextQuestion = async (currentTranscript = transcriptRef.current) => {
-    const data = await askInterviewer(currentTranscript);
+    const nextQIndex = questionIndex.current + 1;
+    const bank = interview?.question_bank || [];
+    let expectedNextQuestionText;
+    if (nextQIndex < bank.length) {
+      expectedNextQuestionText = typeof bank[nextQIndex] === 'string' ? bank[nextQIndex] : bank[nextQIndex].question;
+    }
+    const data = await askInterviewer(currentTranscript, undefined, expectedNextQuestionText);
 
     if (data.isCompleted) {
       setIsCompleted(true);
@@ -485,6 +493,8 @@ export default function InterviewRoom() {
       return;
     }
 
+    questionIndex.current = nextQIndex;
+
     const cleanedResponse = sanitizeAIOutput(data.response);
     const aiMsg = { speaker: 'AI' as 'AI', text: cleanedResponse };
     transcriptRef.current.push(aiMsg);
@@ -495,11 +505,7 @@ export default function InterviewRoom() {
     followUpCountForCurrentQ.current = 0;  // reset follow-up counter for new question
     candidateAnswers.current.push({ q: cleanedResponse, a: '' });
 
-    // Track question index from the interviewer
-    if (data.currentQuestionIndex !== null && data.currentQuestionIndex !== undefined) {
-      questionIndex.current = data.currentQuestionIndex - 1; // Convert 1-based to 0-based
-    }
-
+    // Start listening for the user's answer
     await speak(cleanedResponse);
     startListening();
   };
@@ -518,6 +524,18 @@ export default function InterviewRoom() {
     }
     followUpCountForCurrentQ.current += 1;
 
+    await speak(cleanedResponse);
+    startListening();
+  };
+
+  // ── Repeat question (candidate asked to repeat, zero follow-up cost) ──
+  const askRepeatQuestion = async (currentQuestionText: string, currentTranscript: any[]) => {
+    const data = await askInterviewer(currentTranscript, undefined, undefined, currentQuestionText);
+    const cleanedResponse = sanitizeAIOutput(data.response);
+    const aiMsg = { speaker: 'AI' as 'AI', text: cleanedResponse };
+    transcriptRef.current.push(aiMsg);
+    setTranscript([...transcriptRef.current]);
+    // NOTE: followUpCountForCurrentQ is intentionally NOT incremented here
     await speak(cleanedResponse);
     startListening();
   };
@@ -581,6 +599,22 @@ export default function InterviewRoom() {
       } else {
         lastEntry.a = finalAnswer;
       }
+    }
+
+    // ── Repeat/Rephrase Detection (bypass Evaluator 1, zero follow-up cost) ──
+    const REPEAT_PATTERNS = [
+      /\brepeat\b/i, /\bsay that again\b/i, /\brephrase\b/i,
+      /\bcan you repeat\b/i, /\bwhat did you say\b/i, /\bpardon\b/i,
+      /\bsorry.{0,20}(repeat|again|question)/i, /\bcould you (repeat|say|ask)/i,
+    ];
+    const isRepeatRequest = REPEAT_PATTERNS.some(p => p.test(finalAnswer));
+
+    if (isRepeatRequest && questionIndex.current >= 0) {
+      sendLogToCmd('INFO', '[Repeat Detected] Candidate asked to repeat the question. Bypassing Evaluator 1.');
+      const currentQ = interview.question_bank[questionIndex.current];
+      const currentQText = typeof currentQ === 'string' ? currentQ : currentQ?.question || '';
+      await askRepeatQuestion(currentQText, transcriptRef.current);
+      return;
     }
 
     // ── Evaluator 1: Check key point coverage ─────────────────────
