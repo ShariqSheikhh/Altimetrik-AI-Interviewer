@@ -393,7 +393,7 @@ export default function CreateTest() {
             disabled={loading}
             className="bg-blue-600 hover:bg-blue-700 text-white font-black text-lg rounded-[2rem] px-16 py-6 flex items-center gap-4 transition-all shadow-2xl shadow-blue-600/30 active:scale-95 disabled:opacity-50"
           >
-            {loading ? <Loader2 className="animate-spin" size={24} /> : <>Initialize Assessment & Notify Teams</>}
+            {loading ? <Loader2 className="animate-spin" size={24} /> : <>Initialize Assessment & Send Mail</>}
           </button>
         </div>
       </div>

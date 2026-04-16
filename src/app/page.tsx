@@ -19,6 +19,9 @@ export default function Home() {
           <Link href="/candidate/login" className="bg-white border border-slate-200 hover:border-slate-300 shadow-sm text-slate-700 transition-all px-5 py-2 rounded-xl flex items-center gap-2">
             Candidate Login
           </Link>
+          <Link href="/admin/login" className="bg-slate-900 border border-slate-800 hover:bg-slate-800 text-white shadow-sm transition-all px-5 py-2 rounded-xl flex items-center gap-2">
+            Admin Login
+          </Link>
         </div>
       </nav>
 
