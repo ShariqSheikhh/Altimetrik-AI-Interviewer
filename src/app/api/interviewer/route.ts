@@ -127,21 +127,29 @@ When all questions have been asked and answered, provide a very brief concluding
 `;
 
 export async function POST(req: Request) {
+  console.log(`\n================= [INTERVIEWER API: START] =================`);
   try {
     const body = await req.json();
     const { action, questionBank, transcript, followUpInstruction } = body;
+    console.log(`[Interviewer] Received Action: ${action}`);
+    console.log(`[Interviewer] Follow-Up Instruction? ${!!followUpInstruction}`);
+    console.log(`[Interviewer] Question Bank Size: ${questionBank?.length || 0}`);
+    console.log(`[Interviewer] Transcript length: ${transcript?.length || 0}`);
 
     // ── Input validation ──────────────────────────────────────────
     if (!action || typeof action !== 'string') {
+      console.log(`[Interviewer] Error: Missing or invalid action`);
       return NextResponse.json({ error: 'Missing or invalid action' }, { status: 400 });
     }
 
     if (action === 'ask_next') {
       if (!process.env.ACCESS_KEY_ID) {
+        console.log(`[Interviewer] Error: AWS credentials missing`);
         return NextResponse.json({ response: "AWS credentials missing. Cannot proceed with AI.", isCompleted: true });
       }
 
       if (!Array.isArray(questionBank) || questionBank.length === 0) {
+        console.log(`[Interviewer] Error: Invalid or empty question bank`);
         return NextResponse.json({ error: 'Invalid or empty question bank' }, { status: 400 });
       }
 
@@ -173,6 +181,7 @@ export async function POST(req: Request) {
       // Check for prompt injection in the latest candidate message
       const lastCandidateMsg = [...(transcript || [])].reverse().find((m: any) => m.speaker === 'Candidate');
       if (lastCandidateMsg && containsInjection(lastCandidateMsg.text || '')) {
+        console.warn(`[Interviewer] Guardrail triggered! Detected prompt injection inside transcript from candidate.`);
         return NextResponse.json({
           response: "Let's stay focused on the interview. Could you please answer the question I just asked?",
           isCompleted: false,
@@ -198,10 +207,22 @@ Based on the instructions, what is the AI interviewer's next response? Return ON
           },
         ],
         inferenceConfig: {
-          maxTokens: 1024,
-          temperature: 0.7,
+          maxTokens: 1000, // Reduced max tokens for faster response
+          temperature: 0.3,
         },
       };
+
+      console.log(`[Interviewer] Invoking AWS Bedrock: ${MODEL_ID}`);
+      console.log(`[Interviewer] --- LLM PROMPT PAYLOAD (SENT) ---`);
+      console.log(`
+System Instructions:
+[..System prompt..]
+
+Conversation so far:
+${chatHistory}
+
+Based on the instructions, what is the AI interviewer's next response? Return ONLY the strictly formatted JSON object as requested.`);
+      console.log(`-----------------------------------------------`);
 
       const command = new InvokeModelCommand({
         modelId: MODEL_ID,
@@ -214,6 +235,10 @@ Based on the instructions, what is the AI interviewer's next response? Return ON
       const responseBody = JSON.parse(new TextDecoder().decode(response.body));
       let rawResponse = responseBody.output?.message?.content?.[0]?.text?.trim() || "{}";
 
+      console.log(`[Interviewer] --- LLM RAW RESPONSE (RECEIVED) ---`);
+      console.log(rawResponse);
+      console.log(`-------------------------------------------------`);
+
       // Strip markdown wrappers
       if (rawResponse.startsWith('\`\`\`json')) {
         rawResponse = rawResponse.replace(/^\`\`\`json\s*/, '').replace(/\s*\`\`\`$/, '');
@@ -224,16 +249,23 @@ Based on the instructions, what is the AI interviewer's next response? Return ON
       let parsedJson: { response_text?: string; is_completed?: boolean; current_question_index?: number | null } = {};
       try {
         parsedJson = JSON.parse(rawResponse);
+        console.log(`[Interviewer] Successfully parsed LLM JSON response.`);
       } catch (e) {
-        console.error("Failed to parse LLM JSON output:", rawResponse);
+        console.log(`[Interviewer] FALLBACK: Failed to parse LLM JSON output. Attempting manual cleanup.`);
         parsedJson = {
           response_text: sanitizeOutput(rawResponse),
-          is_completed: rawResponse.includes('[INTERVIEW_ENDED]') || rawResponse.includes('"is_completed": true')
+          is_completed: rawResponse.includes('[INTERVIEW_ENDED]') || rawResponse.includes('"is_completed": true') || false
         };
       }
 
       const cleanResponse = sanitizeOutput(parsedJson.response_text || "I apologize, could you repeat that?");
       const isCompleted = !!parsedJson.is_completed;
+
+      console.log(`[Interviewer] --- FINAL API RESPONSE OVERVIEW ---`);
+      console.log(`Response Text: ${cleanResponse}`);
+      console.log(`Is Completed: ${isCompleted}`);
+      console.log(`Reported Question Index: ${parsedJson.current_question_index ?? 'null'}`);
+      console.log(`=================================================================\n`);
 
       return NextResponse.json({
         response: cleanResponse,
@@ -242,9 +274,12 @@ Based on the instructions, what is the AI interviewer's next response? Return ON
       });
     }
 
+    console.log(`[Interviewer] Error: Invalid Action Type`);
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
   } catch (error: any) {
-    console.error('Interviewer API Error:', error);
+    console.log(`[Interviewer] FALLBACK SEVERE ERROR: Caught unhandled API error!`);
+    console.log(`[Interviewer] Error Stack:`, error);
+    console.log(`=================================================================\n`);
     return NextResponse.json({ error: 'An internal error occurred. Please try again.' }, { status: 500 });
   }
 }

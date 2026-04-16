@@ -7,6 +7,14 @@ import { Mic, MicOff, Video, Play, ShieldCheck, BookOpen, CheckCircle2, ArrowRig
 import Image from 'next/image';
 import logoImg from '../../icon.png';
 
+const sendLogToCmd = (level: string, message: string, details?: any) => {
+  fetch('/api/log', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ level, message, details }),
+  }).catch(() => {});
+};
+
 export default function InterviewRoom() {
   const router = useRouter();
 
@@ -219,8 +227,9 @@ export default function InterviewRoom() {
         setStream(ms);
         streamRef.current = ms;
         if (videoRef.current) videoRef.current.srcObject = ms;
+        sendLogToCmd('INFO', 'User granted Camera/Mic access.');
       } catch (err) {
-        console.error("Camera access failed", err);
+        sendLogToCmd('ERROR', 'Camera access failed', { error: String(err) });
       }
     };
     init();
@@ -403,7 +412,7 @@ export default function InterviewRoom() {
       });
       return await res.json();
     } catch (e) {
-      console.error('[LiveEvaluate] Error:', e);
+      sendLogToCmd('ERROR', '[LiveEvaluate] Error', { error: String(e) });
       return { decision: 'move_next', covered_points: [], missed_points: keyPoints, coverage_percentage: 0 };
     }
   };
@@ -423,7 +432,7 @@ export default function InterviewRoom() {
       });
 
       if (!res.ok) {
-        console.error('[Interviewer] HTTP error:', res.status, res.statusText);
+        sendLogToCmd('ERROR', '[Interviewer] HTTP error', { status: res.status, text: res.statusText });
         throw new Error(`HTTP error ${res.status}`);
       }
 
@@ -431,13 +440,13 @@ export default function InterviewRoom() {
 
       // Check if API returned an error field
       if (data.error) {
-        console.error('[Interviewer] API error:', data.error);
+        sendLogToCmd('ERROR', '[Interviewer] API error', { error: data.error });
         throw new Error(`API error: ${data.error}`);
       }
 
       return data;
     } catch (e) {
-      console.error('[Interviewer] Error:', e);
+      sendLogToCmd('ERROR', '[Interviewer] Fallback triggered due to error', { error: String(e) });
       // Fallback: manually proceed to the next question
       const nextQIndex = questionIndex.current + 1;
       const bank = interview?.question_bank || [];
@@ -562,7 +571,7 @@ export default function InterviewRoom() {
         followUpCountForCurrentQ.current > 0 ? finalAnswer : undefined
       );
 
-      console.log('[Evaluator 1] Decision:', liveResult.decision, 'Coverage:', liveResult.coverage_percentage);
+      sendLogToCmd('INFO', '[Evaluator 1] Decision Details', { decision: liveResult.decision, coverage: liveResult.coverage_percentage });
 
       // Track coverage
       coveragePerQuestion.current.push({
@@ -648,14 +657,14 @@ export default function InterviewRoom() {
         })
       });
       const data = await res.json();
-      console.log('[Evaluator 2] API response:', data);
+      sendLogToCmd('INFO', '[Evaluator 2] API response received');
       if (data.evaluation) {
         evaluationResult = data.evaluation;
       } else {
-        console.error('[Evaluator 2] Missing evaluation field:', data);
+        sendLogToCmd('ERROR', '[Evaluator 2] Missing evaluation field', data);
       }
     } catch (e) {
-      console.error('[Evaluator 2] Fetch failed:', e);
+      sendLogToCmd('ERROR', '[Evaluator 2] Fetch failed', { error: String(e) });
     }
 
     // Upload video to S3 via server-side proxy (browser → Next.js API → S3)
@@ -676,7 +685,7 @@ export default function InterviewRoom() {
         const videoBlob = new Blob(recordedChunks.current, { type: 'video/webm' });
 
         if (videoBlob.size === 0) {
-          console.warn('[Upload] Video blob is empty, skipping upload');
+          sendLogToCmd('WARN', '[Upload] Video blob is empty, skipping upload');
         } else {
           const fileName = `${candidate.id}-${Date.now()}.webm`;
           const controller = new AbortController();
@@ -708,20 +717,20 @@ export default function InterviewRoom() {
 
             if (uploadRes.ok) {
               finalVideoUrl = presignData.publicUrl;
-              console.log('[Upload] Success:', finalVideoUrl);
+              sendLogToCmd('INFO', '[Upload] Success', { url: finalVideoUrl });
             } else {
-              console.error('[Upload] Direct S3 upload failed:', uploadRes.statusText);
+              sendLogToCmd('ERROR', '[Upload] Direct S3 upload failed', { statusText: uploadRes.statusText });
             }
           } else {
-            console.error('[Upload] API failed to return presigned URL:', presignData);
+            sendLogToCmd('ERROR', '[Upload] API failed to return presigned URL', presignData);
             clearTimeout(timer);
           }
         }
       } catch (err: any) {
         if (err?.name === 'AbortError') {
-          console.error('[Upload] Timed out after 5 minutes — interview results will still be saved without video.');
+          sendLogToCmd('ERROR', '[Upload] Timed out after 5 minutes — interview results will still be saved without video.');
         } else {
-          console.error('[Upload] Error:', err);
+          sendLogToCmd('ERROR', '[Upload] Error During Upload', { error: String(err) });
         }
       }
     }
