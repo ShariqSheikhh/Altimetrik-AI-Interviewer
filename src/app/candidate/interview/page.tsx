@@ -49,6 +49,7 @@ export default function InterviewRoom() {
   // ── Evaluator 1 tracking ──────────────────────────────────────────
   const coveragePerQuestion = useRef<{ questionIndex: number, coverage: number }[]>([]);
   const questionsWithFollowUps = useRef<number>(0);
+  const followUpsPerQuestion = useRef<{ questionIndex: number, count: number }[]>([]);
   const followUpCountForCurrentQ = useRef(0);  // how many follow-ups asked for current question
   const lastQuestionText = useRef('');
   const emptyAudioAttempts = useRef(0);
@@ -610,6 +611,7 @@ export default function InterviewRoom() {
     }
 
     // No key points, or Evaluator 1 said move on / max follow-ups reached → next question
+    followUpsPerQuestion.current.push({ questionIndex: questionIndex.current, count: followUpCountForCurrentQ.current });
     followUpCountForCurrentQ.current = 0;
     await askNextQuestion(transcriptRef.current);
   };
@@ -656,6 +658,7 @@ export default function InterviewRoom() {
 
     const followUpData = {
       questions_with_follow_ups: questionsWithFollowUps.current,
+      per_question: followUpsPerQuestion.current,
       total_questions: totalQuestions,
     };
 
