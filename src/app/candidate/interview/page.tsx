@@ -51,6 +51,7 @@ export default function InterviewRoom() {
   const questionsWithFollowUps = useRef<number>(0);
   const followUpCountForCurrentQ = useRef(0);  // how many follow-ups asked for current question
   const lastQuestionText = useRef('');
+  const emptyAudioAttempts = useRef(0);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -418,6 +419,7 @@ export default function InterviewRoom() {
           action: 'ask_next',
           questionBank: interview.question_bank,
           transcript: currentTranscript,
+          candidateName: candidate?.name,
           ...(followUpInstruction ? { followUpInstruction } : {}),
         }),
       });
@@ -514,7 +516,31 @@ export default function InterviewRoom() {
       recognitionRef.current.stop();
     }
 
-    const finalAnswer = currentAnswer.trim() || '(No response audible)';
+    const finalAnswerText = currentAnswer.trim();
+    
+    if (!finalAnswerText) {
+      if (emptyAudioAttempts.current < 2) {
+        emptyAudioAttempts.current += 1;
+        const msg = "I'm sorry, I couldn't hear your response. Could you please check your microphone and try again?";
+        const aiMsg = { speaker: 'AI' as 'AI', text: msg };
+        transcriptRef.current.push(aiMsg);
+        setTranscript([...transcriptRef.current]);
+        await speak(msg);
+        startListening();
+        return;
+      } else {
+        emptyAudioAttempts.current = 0;
+        const moveOnMsg = "It seems we are having audio issues from your side. Let me log that, and we'll move on to the next question.";
+        const aiMsg = { speaker: 'AI' as 'AI', text: moveOnMsg };
+        transcriptRef.current.push(aiMsg);
+        setTranscript([...transcriptRef.current]);
+        await speak(moveOnMsg);
+      }
+    } else {
+      emptyAudioAttempts.current = 0;
+    }
+
+    const finalAnswer = finalAnswerText || '(No response audible)';
 
     // Add to transcript
     const candidateMsg = { speaker: 'Candidate' as 'Candidate', text: finalAnswer };
@@ -954,7 +980,9 @@ export default function InterviewRoom() {
             )}
             {transcript.map((msg, i) => (
               <div key={i} className={`flex flex-col ${msg.speaker === 'Candidate' ? 'items-end' : 'items-start'} animate-in slide-in-from-bottom-2 duration-200`}>
-                <span className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 px-2 tracking-widest">{msg.speaker}</span>
+                <span className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 px-2 tracking-widest">
+                  {msg.speaker === 'AI' ? 'Alti' : (candidate?.name || 'Candidate')}
+                </span>
                 <div className={`px-5 py-3 rounded-2xl max-w-[90%] text-sm leading-relaxed shadow-sm ${msg.speaker === 'Candidate' ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-slate-100 text-slate-700 rounded-tl-none border border-slate-100'
                   }`}>
                   {msg.text}
@@ -963,7 +991,7 @@ export default function InterviewRoom() {
             ))}
             {isListening && currentAnswer && (
               <div className="flex flex-col items-end">
-                <span className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 px-2 tracking-widest">Candidate (Live)</span>
+                <span className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 px-2 tracking-widest">{candidate?.name ? `${candidate.name} (Live)` : 'Candidate (Live)'}</span>
                 <div className="px-5 py-3 rounded-2xl max-w-[90%] text-sm bg-blue-50 text-blue-700 border border-blue-100 italic">
                   {currentAnswer}
                 </div>
