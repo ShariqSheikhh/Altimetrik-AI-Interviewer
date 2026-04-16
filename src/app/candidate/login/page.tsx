@@ -46,6 +46,27 @@ export default function CandidateLogin() {
         throw new Error('You have already completed this interview. You cannot take it again.');
       }
 
+      // Check session validity (24 hours)
+      let sessionStartedAt = data.session_started_at;
+      if (!sessionStartedAt) {
+        // First login, set it
+        const { error: updateError } = await supabase
+          .from('candidates')
+          .update({ session_started_at: new Date().toISOString() })
+          .eq('id', data.id);
+        
+        if (updateError) {
+          console.error("Failed to update session_started_at", updateError);
+        }
+      } else {
+        const started = new Date(sessionStartedAt);
+        const now = new Date();
+        const diffHours = (now.getTime() - started.getTime()) / (1000 * 60 * 60);
+        if (diffHours > 24) {
+          throw new Error('Your 24-hour window to complete this assessment has expired.');
+        }
+      }
+
       // Store in simple localStorage for MVP persistence
       localStorage.setItem('candidate_id', data.id);
       localStorage.setItem('interview_id', data.interview_id);

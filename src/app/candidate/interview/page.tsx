@@ -60,6 +60,11 @@ export default function InterviewRoom() {
   const followUpCountForCurrentQ = useRef(0);  // how many follow-ups asked for current question
   const lastQuestionText = useRef('');
   const emptyAudioAttempts = useRef(0);
+  
+  // ── S3 Segmented Storage State ─────────────────────────────────────
+  const segmentIndexRef = useRef(1);
+  const pendingUploadsRef = useRef<Set<Promise<any>>>(new Set());
+  const isResumingRef = useRef(false);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -220,8 +225,31 @@ export default function InterviewRoom() {
         supabase.from('candidates').select('*').eq('id', cid).single(),
         supabase.from('interviews').select('*').eq('id', iid).single()
       ]);
-      setCandidate(cRes.data);
+      const cData = cRes.data;
+      setCandidate(cData);
       setInterview(iRes.data);
+
+      // ── Restore State if exists ──
+      if (cData?.session_state && Object.keys(cData.session_state).length > 0) {
+        const state = cData.session_state;
+        if (state.transcript) {
+          transcriptRef.current = state.transcript;
+          setTranscript([...state.transcript]);
+        }
+        if (state.questionIndex !== undefined) questionIndex.current = state.questionIndex;
+        if (state.candidateAnswers) candidateAnswers.current = state.candidateAnswers;
+        if (state.coveragePerQuestion) coveragePerQuestion.current = state.coveragePerQuestion;
+        if (state.questionsWithFollowUps) questionsWithFollowUps.current = state.questionsWithFollowUps;
+        if (state.followUpCountForCurrentQ) followUpCountForCurrentQ.current = state.followUpCountForCurrentQ;
+        
+        // Restore Segment Count for ordering
+        if (cData.s3_uploaded_parts) {
+          segmentIndexRef.current = cData.s3_uploaded_parts.length + 1;
+        }
+        
+        isResumingRef.current = true;
+        sendLogToCmd('INFO', 'Interview state restored from DB.');
+      }
 
       try {
         const ms = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
@@ -417,6 +445,29 @@ export default function InterviewRoom() {
       return { decision: 'move_next', covered_points: [], missed_points: keyPoints, coverage_percentage: 0 };
     }
   };
+  
+  // ── State Persistence Logic ──
+  const saveInterviewState = async () => {
+    const cid = localStorage.getItem('candidate_id');
+    if (!cid) return;
+
+    const state = {
+      transcript: transcriptRef.current,
+      questionIndex: questionIndex.current,
+      candidateAnswers: candidateAnswers.current,
+      coveragePerQuestion: coveragePerQuestion.current,
+      questionsWithFollowUps: questionsWithFollowUps.current,
+      followUpCountForCurrentQ: followUpCountForCurrentQ.current,
+    };
+
+    try {
+      await supabase.from('candidates').update({
+        session_state: state,
+      }).eq('id', cid);
+    } catch (e) {
+      sendLogToCmd('ERROR', 'Failed to save progress to DB', { error: String(e) });
+    }
+  };
 
   // ── Ask the Interviewer for next response ────────────────────────
   const askInterviewer = async (currentTranscript: any[], followUpInstruction?: string) => {
@@ -494,11 +545,11 @@ export default function InterviewRoom() {
     followUpCountForCurrentQ.current = 0;  // reset follow-up counter for new question
     candidateAnswers.current.push({ q: cleanedResponse, a: '' });
 
-    // Track question index from the interviewer
     if (data.currentQuestionIndex !== null && data.currentQuestionIndex !== undefined) {
       questionIndex.current = data.currentQuestionIndex - 1; // Convert 1-based to 0-based
     }
 
+    await saveInterviewState();
     await speak(cleanedResponse);
     startListening();
   };
@@ -517,6 +568,7 @@ export default function InterviewRoom() {
     }
     followUpCountForCurrentQ.current += 1;
 
+    await saveInterviewState();
     await speak(cleanedResponse);
     startListening();
   };
@@ -582,6 +634,8 @@ export default function InterviewRoom() {
       }
     }
 
+    await saveInterviewState();
+
     // ── Evaluator 1: Check key point coverage ─────────────────────
     const keyPoints = getKeyPointsForQuestion(questionIndex.current);
 
@@ -633,45 +687,96 @@ export default function InterviewRoom() {
     isInterviewActive.current = true;
     // Enter fullscreen when interview starts
     enterFullscreen();
+    
     if (stream) {
-      mediaRecorderRef.current = new MediaRecorder(stream);
-      mediaRecorderRef.current.ondataavailable = (e) => {
-        if (e.data.size > 0) recordedChunks.current.push(e.data);
+      mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'video/webm' });
+      mediaRecorderRef.current.ondataavailable = async (e) => {
+        if (e.data.size > 0) {
+          const blob = e.data;
+          const currentIdx = segmentIndexRef.current++;
+          const segmentFileName = `${candidate.id}/segment_${String(currentIdx).padStart(4, '0')}.webm`;
+          
+          const uploadPromise = (async () => {
+            try {
+              const res = await fetch('/api/upload-video', {
+                method: 'POST',
+                body: JSON.stringify({ action: 'upload', fileName: segmentFileName, fileType: 'video/webm' }),
+              });
+              const { signedUrl } = await res.json();
+              
+              await fetch(signedUrl, {
+                method: 'PUT',
+                body: blob,
+              });
+
+              // Track successful segment in DB metadata (reusing existing column)
+              const { data: cData } = await supabase.from('candidates').select('s3_uploaded_parts').eq('id', candidate.id).single();
+              const existing = cData?.s3_uploaded_parts || [];
+              await supabase.from('candidates').update({ 
+                s3_uploaded_parts: [...existing, { segment: segmentFileName }] 
+              }).eq('id', candidate.id);
+
+            } catch (err) {
+              sendLogToCmd('ERROR', `Failed to upload segment ${currentIdx}`, { error: String(err) });
+            }
+          })();
+
+          pendingUploadsRef.current.add(uploadPromise);
+          uploadPromise.finally(() => pendingUploadsRef.current.delete(uploadPromise));
+        }
       };
-      mediaRecorderRef.current.start();
+      mediaRecorderRef.current.start(5000); // 5 second segments
     }
-    await askNextQuestion();
+
+    if (isResumingRef.current) {
+      const lastMsg = transcriptRef.current[transcriptRef.current.length - 1];
+      if (lastMsg?.speaker === 'AI') {
+        const msg = `Welcome back, ${candidate?.name}. I'll repeat my last question clearly so you can continue. ${lastMsg.text}`;
+        await speak(msg);
+        startListening();
+      } else {
+        const msg = `Welcome back, ${candidate?.name}. Let's continue with the next part of the interview.`;
+        await speak(msg);
+        await askNextQuestion();
+      }
+      isResumingRef.current = false;
+    } else {
+      await askNextQuestion();
+    }
   };
 
   const handleEndInterview = async () => {
-    setSavingStatus('Evaluating answers and saving video...');
-
+    setSavingStatus('Finalizing your interview and saving signals...');
     try { recognitionRef.current?.stop(); } catch (e) { }
+    
+    // 1. Stop recording and wait for final chunk
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
+      await new Promise(r => setTimeout(r, 800)); // Wait for final ondataavailable
     }
 
-    // ── Prepare Evaluator 1 metrics for Evaluator 2 ─────────────
+    // 2. Wait for all pending uploads
+    if (pendingUploadsRef.current.size > 0) {
+      setSavingStatus('Synchronizing video recording...');
+      await Promise.all(Array.from(pendingUploadsRef.current));
+    }
+
+    const finalVideoUrl = `interview-videos/${candidate.id}/`;
+
+    // 3. Prepare metrics
     const totalQuestions = interview?.question_bank?.length || 1;
     const coverages = coveragePerQuestion.current;
-    const avgCoverage = coverages.length > 0
-      ? coverages.reduce((sum, c) => sum + c.coverage, 0) / coverages.length
+    const avgCoverage = coverages.length > 0 
+      ? coverages.reduce((sum, c) => sum + c.coverage, 0) / coverages.length 
       : 0;
 
-    const coverageData = {
-      average_coverage: avgCoverage,
-      per_question: coverages,
-    };
+    const coverageData = { average_coverage: avgCoverage, per_question: coverages };
+    const followUpData = { questions_with_follow_ups: questionsWithFollowUps.current, total_questions: totalQuestions };
 
-    const followUpData = {
-      questions_with_follow_ups: questionsWithFollowUps.current,
-      total_questions: totalQuestions,
-    };
-
-    // ── Call Evaluator 2 (post-interview) ─────────────────────────
+    // 4. Call Evaluator 2
     let evaluationResult: any = {};
     try {
-      setSavingStatus('AI is evaluating your responses...');
+      setSavingStatus('AI is evaluating your session...');
       const res = await fetch('/api/evaluate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -680,118 +785,47 @@ export default function InterviewRoom() {
           previousContext: transcriptRef.current,
           coverageData,
           followUpData,
+          candidateName: candidate.name,
+          candidateEmail: candidate.email
         })
       });
       const data = await res.json();
-      sendLogToCmd('INFO', '[Evaluator 2] API response received');
-      if (data.evaluation) {
-        evaluationResult = data.evaluation;
-      } else {
-        sendLogToCmd('ERROR', '[Evaluator 2] Missing evaluation field', data);
-      }
+      if (data.evaluation) evaluationResult = data.evaluation;
     } catch (e) {
-      sendLogToCmd('ERROR', '[Evaluator 2] Fetch failed', { error: String(e) });
-    }
-
-    // Upload video to S3 via server-side proxy (browser → Next.js API → S3)
-    let finalVideoUrl = '';
-    if (mediaRecorderRef.current && recordedChunks.current.length > 0) {
-      try {
-        await new Promise<void>(resolve => {
-          if (!mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') {
-            resolve();
-          } else {
-            mediaRecorderRef.current.onstop = () => resolve();
-            setTimeout(resolve, 3000); // safety timeout
-          }
-        });
-        await new Promise(r => setTimeout(r, 300));
-
-        setSavingStatus('Uploading session recording...');
-        const videoBlob = new Blob(recordedChunks.current, { type: 'video/webm' });
-
-        if (videoBlob.size === 0) {
-          sendLogToCmd('WARN', '[Upload] Video blob is empty, skipping upload');
-        } else {
-          const fileName = `${candidate.id}-${Date.now()}.webm`;
-          const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), 5 * 60 * 1000); // 5 min timeout
-
-          const presignRes = await fetch('/api/upload-video', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'upload',
-              fileName: fileName,
-              fileType: videoBlob.type || 'video/webm'
-            }),
-          });
-
-          const presignData = await presignRes.json();
-
-          if (presignRes.ok && presignData.signedUrl) {
-            setSavingStatus('Uploading session recording...');
-
-            const uploadRes = await fetch(presignData.signedUrl, {
-              method: 'PUT',
-              body: videoBlob,
-              headers: {
-                'Content-Type': videoBlob.type || 'video/webm'
-              },
-              signal: controller.signal,
-            }).finally(() => clearTimeout(timer));
-
-            if (uploadRes.ok) {
-              finalVideoUrl = presignData.publicUrl;
-              sendLogToCmd('INFO', '[Upload] Success', { url: finalVideoUrl });
-            } else {
-              sendLogToCmd('ERROR', '[Upload] Direct S3 upload failed', { statusText: uploadRes.statusText });
-            }
-          } else {
-            sendLogToCmd('ERROR', '[Upload] API failed to return presigned URL', presignData);
-            clearTimeout(timer);
-          }
-        }
-      } catch (err: any) {
-        if (err?.name === 'AbortError') {
-          sendLogToCmd('ERROR', '[Upload] Timed out after 5 minutes — interview results will still be saved without video.');
-        } else {
-          sendLogToCmd('ERROR', '[Upload] Error During Upload', { error: String(err) });
-        }
-      }
+      sendLogToCmd('ERROR', '[Evaluator 2] Failed', { error: String(e) });
     }
 
     const finalEvaluation = {
       ...evaluationResult,
-      security_violations: {
-        tab_switches: tabSwitchCount,
-        fullscreen_exits: fullscreenExitCount
-      }
+      security_violations: { tab_switches: tabSwitchCount, fullscreen_exits: fullscreenExitCount }
     };
 
+    // 5. Save Results
     try {
       await supabase.from('results').insert([{
         candidate_id: candidate.id,
         interview_id: interview.id,
         evaluation: finalEvaluation,
         transcript_data: { full_transcript: candidateAnswers.current.filter((item) => item.a !== '') },
-        video_url: finalVideoUrl || null
+        video_url: finalVideoUrl
       }]);
 
-      setSavingStatus('Your results are saved securely.');
-      sessionStorage.setItem('interview_done', 'true');
-      isInterviewActive.current = false; // Allow page to reset safely
-      streamRef.current?.getTracks().forEach(t => t.stop());
-      try { recognitionRef.current?.stop(); } catch (e) { }
-      // Exit fullscreen before reload
-      if (document.exitFullscreen) document.exitFullscreen().catch(() => { });
-      window.location.reload();
-    } catch (err) {
-      setSavingStatus('Server error saving. Please contact admin.');
+      setSavingStatus('Interview completed successfully.');
+      
+      // 6. Cleanup candidate record
+      await supabase.from('candidates').update({
+        session_state: {},
+        s3_uploaded_parts: []
+      }).eq('id', candidate.id);
+
       sessionStorage.setItem('interview_done', 'true');
       isInterviewActive.current = false;
       streamRef.current?.getTracks().forEach(t => t.stop());
+
       if (document.exitFullscreen) document.exitFullscreen().catch(() => { });
+      window.location.reload();
+    } catch (err) {
+      sendLogToCmd('ERROR', 'Failed to save results', { error: String(err) });
       window.location.reload();
     }
   };

@@ -46,3 +46,11 @@ on conflict (id) do nothing;
 create policy "Public Access Videos" 
 on storage.objects for all 
 using ( bucket_id = 'videos' );
+
+-- Interview Resume / S3 Multipart Migration --
+ALTER TABLE public.candidates 
+ADD COLUMN IF NOT EXISTS session_started_at TIMESTAMPTZ,
+ADD COLUMN IF NOT EXISTS session_state JSONB DEFAULT '{}',
+ADD COLUMN IF NOT EXISTS s3_upload_id TEXT,    
+ADD COLUMN IF NOT EXISTS s3_upload_key TEXT,
+ADD COLUMN IF NOT EXISTS s3_uploaded_parts JSONB DEFAULT '[]';
