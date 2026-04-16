@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 
+export const maxDuration = 60;
+
 const bedrockClient = new BedrockRuntimeClient({
   region: process.env.REGION || 'us-east-1',
   credentials: {
@@ -85,7 +87,7 @@ You MUST return ONLY a valid JSON object (no markdown, no extra text):
       ],
       inferenceConfig: {
         maxTokens: 1024,
-        temperature: 0.2,
+        temperature: 0,
       },
     };
 
