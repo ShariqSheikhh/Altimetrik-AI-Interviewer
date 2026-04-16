@@ -426,7 +426,7 @@ export default function InterviewRoom() {
 
       if (!res.ok) {
         console.error('[Interviewer] HTTP error:', res.status, res.statusText);
-        return { response: 'I apologize, there was a connection issue. Let me continue.', isCompleted: false };
+        throw new Error(`HTTP error ${res.status}`);
       }
 
       const data = await res.json();
@@ -434,13 +434,29 @@ export default function InterviewRoom() {
       // Check if API returned an error field
       if (data.error) {
         console.error('[Interviewer] API error:', data.error);
-        return { response: 'I apologize, there was an error processing your response. Let me continue.', isCompleted: false };
+        throw new Error(`API error: ${data.error}`);
       }
 
       return data;
     } catch (e) {
       console.error('[Interviewer] Error:', e);
-      return { response: 'I apologize, there was an issue. Let me continue.', isCompleted: false };
+      // Fallback: manually proceed to the next question
+      const nextQIndex = questionIndex.current + 1;
+      const bank = interview?.question_bank || [];
+      if (nextQIndex < bank.length) {
+        const fallbackQuestion = typeof bank[nextQIndex] === 'string' ? bank[nextQIndex] : bank[nextQIndex].question;
+        return { 
+          response: `I apologize, there was a connection issue. Let's continue. ${fallbackQuestion}`, 
+          isCompleted: false,
+          currentQuestionIndex: nextQIndex + 1
+        };
+      } else {
+        return { 
+          response: 'I apologize, there was a connection issue. We have finished all questions. Thank you for your time!', 
+          isCompleted: true,
+          currentQuestionIndex: nextQIndex + 1
+        };
+      }
     }
   };
 
@@ -705,7 +721,7 @@ export default function InterviewRoom() {
           const presignData = await presignRes.json();
 
           if (presignRes.ok && presignData.signedUrl) {
-            setSavingStatus('Uploading session recording direct to S3...');
+            setSavingStatus('Uploading session recording...');
 
             const uploadRes = await fetch(presignData.signedUrl, {
               method: 'PUT',

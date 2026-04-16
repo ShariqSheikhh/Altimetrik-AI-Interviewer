@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 
+export const maxDuration = 60;
+
 const bedrockClient = new BedrockRuntimeClient({
   region: process.env.REGION || 'us-east-1',
   credentials: {

@@ -605,7 +605,7 @@ if (!allowedOrigins.includes(origin)) {
 3. Use a faster AI model (`nova-lite` vs `nova-pro`)
 4. Add retry logic with shorter timeouts
 
-### ❌ Videos Not Uploading
+### Videos Not Uploading
 
 **Symptoms:** Interview completes but video_url is null
 
