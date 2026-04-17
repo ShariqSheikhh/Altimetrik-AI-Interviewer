@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
       // URL expires in 1 hour
       const signedUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
       
-      const region = await s3Client.config.region();
+      const region = s3Config.region;
       const publicUrl = process.env.CLOUDFRONT_URL
         ? `${process.env.CLOUDFRONT_URL}/${key}`
         : `https://${bucketName}.s3.${region}.amazonaws.com/${key}`;
@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
       });
       const response = await s3Client.send(command);
       
-      const region = await s3Client.config.region();
+      const region = s3Config.region;
       const publicUrl = process.env.CLOUDFRONT_URL
         ? `${process.env.CLOUDFRONT_URL}/${key}`
         : `https://${bucketName}.s3.${region}.amazonaws.com/${key}`;
@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
         },
       });
       const response = await s3Client.send(command);
-      const region = await s3Client.config.region();
+      const region = s3Config.region;
       const cleanLocation = `https://${bucketName}.s3.${region}.amazonaws.com/${key}`;
       return NextResponse.json({ success: true, location: cleanLocation });
       
@@ -126,7 +126,7 @@ export async function POST(req: NextRequest) {
         const getCmd = new GetObjectCommand({ Bucket: bucketName, Key: finalKey });
         finalUrl = await getSignedUrl(s3Client, getCmd, { expiresIn: 3600 });
         
-        const region = await s3Client.config.region();
+        const region = s3Config.region;
         finalPublicUrl = process.env.CLOUDFRONT_URL
           ? `${process.env.CLOUDFRONT_URL}/${finalKey}`
           : `https://${bucketName}.s3.${region}.amazonaws.com/${finalKey}`;

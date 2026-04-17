@@ -99,6 +99,7 @@ export default function ResultDetails() {
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [presignedUrl, setPresignedUrl] = useState<string | null>(null);
+  const [fetchingUrl, setFetchingUrl] = useState(false);
   const [videoError, setVideoError] = useState(false);
   const [stitchingStatus, setStitchingStatus] = useState<string | null>(null);
 
@@ -199,7 +200,7 @@ export default function ResultDetails() {
             setFetchingUrl(false);
         }
     };
-    getUrl();
+    getPresignedUrl();
   }, [result?.video_url]);
 
   if (loading) return (

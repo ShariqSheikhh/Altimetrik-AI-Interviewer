@@ -66,6 +66,8 @@ export default function InterviewRoom() {
   const segmentIndexRef = useRef(1);
   const pendingUploadsRef = useRef<Set<Promise<any>>>(new Set());
   const isResumingRef = useRef(false);
+  const uploadQueueRef = useRef<{ blob: Blob; fileName: string; index: number }[]>([]);
+  const isProcessingQueueRef = useRef(false);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -525,13 +527,9 @@ export default function InterviewRoom() {
 
   // ── Main flow: Ask the next question ─────────────────────────────
   const askNextQuestion = async (currentTranscript = transcriptRef.current) => {
-    const nextQIndex = questionIndex.current + 1;
-    const bank = interview?.question_bank || [];
-    let expectedNextQuestionText;
-    if (nextQIndex < bank.length) {
-      expectedNextQuestionText = typeof bank[nextQIndex] === 'string' ? bank[nextQIndex] : bank[nextQIndex].question;
-    }
-    const data = await askInterviewer(currentTranscript, undefined, expectedNextQuestionText);
+    // Fully LLM-driven: we no longer pass the expected next question text.
+    // The AI scans the transcript and selects the next question itself.
+    const data = await askInterviewer(currentTranscript, undefined, undefined);
 
     if (data.isCompleted) {
       setIsCompleted(true);
@@ -544,7 +542,15 @@ export default function InterviewRoom() {
       return;
     }
 
-    questionIndex.current = nextQIndex;
+    // Only update the local index if a technical question was actually asked (LLM returns a non-null index)
+    if (data.currentQuestionIndex !== null && data.currentQuestionIndex !== undefined) {
+      questionIndex.current = data.currentQuestionIndex - 1; // Convert 1-based to 0-based
+    } else if (questionIndex.current < 0) {
+       // We are still in Readiness/Intro phase
+    } else {
+       // Normal progression for technical questions if LLM forgets to return index
+       questionIndex.current = nextQIndex;
+    }
 
     const cleanedResponse = sanitizeAIOutput(data.response);
     const aiMsg = { speaker: 'AI' as 'AI', text: cleanedResponse };
@@ -556,9 +562,7 @@ export default function InterviewRoom() {
     followUpCountForCurrentQ.current = 0;  // reset follow-up counter for new question
     candidateAnswers.current.push({ q: cleanedResponse, a: '' });
 
-    if (data.currentQuestionIndex !== null && data.currentQuestionIndex !== undefined) {
-      questionIndex.current = data.currentQuestionIndex - 1; // Convert 1-based to 0-based
-    }
+    // (Moved logic above for better flow)
 
     await saveInterviewState();
     await speak(cleanedResponse);
@@ -676,7 +680,7 @@ export default function InterviewRoom() {
     await saveInterviewState();
 
     // ── Evaluator 1: Check key point coverage ─────────────────────
-    const keyPoints = getKeyPointsForQuestion(questionIndex.current);
+    const keyPoints = questionIndex.current >= 0 ? getKeyPointsForQuestion(questionIndex.current) : [];
 
     if (keyPoints.length > 0 && questionIndex.current >= 0) {
       // There are key points to check
@@ -721,6 +725,48 @@ export default function InterviewRoom() {
     setShowInstructions(true);
   };
 
+  const processUploadQueue = async () => {
+    if (isProcessingQueueRef.current || uploadQueueRef.current.length === 0) return;
+    isProcessingQueueRef.current = true;
+
+    while (uploadQueueRef.current.length > 0) {
+      const item = uploadQueueRef.current.shift();
+      if (!item) continue;
+
+      const { blob, fileName, index } = item;
+      const uploadPromise = (async () => {
+        try {
+          const res = await fetch('/api/upload-video', {
+            method: 'POST',
+            body: JSON.stringify({ action: 'upload', fileName, fileType: 'video/webm' }),
+          });
+          const { signedUrl } = await res.json();
+          
+          await fetch(signedUrl, {
+            method: 'PUT',
+            body: blob,
+          });
+
+          // Track segment in DB in the background
+          const { data: cData } = await supabase.from('candidates').select('s3_uploaded_parts').eq('id', candidate.id).single();
+          const existing = cData?.s3_uploaded_parts || [];
+          await supabase.from('candidates').update({ 
+            s3_uploaded_parts: [...existing, { segment: fileName }] 
+          }).eq('id', candidate.id);
+
+        } catch (err) {
+          sendLogToCmd('ERROR', `Background upload failed for segment ${index}`, { error: String(err) });
+        }
+      })();
+
+      pendingUploadsRef.current.add(uploadPromise);
+      await uploadPromise;
+      pendingUploadsRef.current.delete(uploadPromise);
+    }
+
+    isProcessingQueueRef.current = false;
+  };
+
   const startInterviewProcess = async () => {
     setShowInstructions(false);
     setIsStarted(true);
@@ -730,39 +776,14 @@ export default function InterviewRoom() {
     
     if (stream) {
       mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'video/webm' });
-      mediaRecorderRef.current.ondataavailable = async (e) => {
+      mediaRecorderRef.current.ondataavailable = (e) => {
         if (e.data.size > 0) {
           const blob = e.data;
           const currentIdx = segmentIndexRef.current++;
           const segmentFileName = `${candidate.id}/segment_${String(currentIdx).padStart(4, '0')}.webm`;
           
-          const uploadPromise = (async () => {
-            try {
-              const res = await fetch('/api/upload-video', {
-                method: 'POST',
-                body: JSON.stringify({ action: 'upload', fileName: segmentFileName, fileType: 'video/webm' }),
-              });
-              const { signedUrl } = await res.json();
-              
-              await fetch(signedUrl, {
-                method: 'PUT',
-                body: blob,
-              });
-
-              // Track successful segment in DB metadata (reusing existing column)
-              const { data: cData } = await supabase.from('candidates').select('s3_uploaded_parts').eq('id', candidate.id).single();
-              const existing = cData?.s3_uploaded_parts || [];
-              await supabase.from('candidates').update({ 
-                s3_uploaded_parts: [...existing, { segment: segmentFileName }] 
-              }).eq('id', candidate.id);
-
-            } catch (err) {
-              sendLogToCmd('ERROR', `Failed to upload segment ${currentIdx}`, { error: String(err) });
-            }
-          })();
-
-          pendingUploadsRef.current.add(uploadPromise);
-          uploadPromise.finally(() => pendingUploadsRef.current.delete(uploadPromise));
+          uploadQueueRef.current.push({ blob, fileName: segmentFileName, index: currentIdx });
+          processUploadQueue();
         }
       };
       mediaRecorderRef.current.start(5000); // 5 second segments
@@ -771,11 +792,11 @@ export default function InterviewRoom() {
     if (isResumingRef.current) {
       const lastMsg = transcriptRef.current[transcriptRef.current.length - 1];
       if (lastMsg?.speaker === 'AI') {
-        const msg = `Welcome back, ${candidate?.name}. I'll repeat my last question clearly so you can continue. ${lastMsg.text}`;
+        const msg = `Welcome back! I've restored our session. To pick up where we left off, I was asking about your thoughts on ${lastMsg.text.length > 50 ? lastMsg.text.substring(0, 50) + '...' : lastMsg.text}. Let's continue.`;
         await speak(msg);
         startListening();
       } else {
-        const msg = `Welcome back, ${candidate?.name}. Let's continue with the next part of the interview.`;
+        const msg = `Welcome back. I've restored your progress. Let's continue with the assessment.`;
         await speak(msg);
         await askNextQuestion();
       }
@@ -820,8 +841,6 @@ export default function InterviewRoom() {
       per_question: followUpsPerQuestion.current,
       total_questions: totalQuestions,
     };
-    const coverageData = { average_coverage: avgCoverage, per_question: coverages };
-    const followUpData = { questions_with_follow_ups: questionsWithFollowUps.current, total_questions: totalQuestions };
 
     // 4. Call Evaluator 2
     let evaluationResult: any = {};
