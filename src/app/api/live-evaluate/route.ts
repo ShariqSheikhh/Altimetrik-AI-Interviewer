@@ -71,11 +71,9 @@ ${sanitizedFollowUp ? `\n## Candidate's Follow-up Answer:\n${sanitizedFollowUp}`
 Analyze the candidate's answer(s) and determine which key points were covered and which were missed.
 
 Then decide:
-- "move_next" — MANDATORY if ALL or 80% of the key points are covered in the candidate's answer. If the candidate has successfully demonstrated understanding of the required key points, you MUST choose "move_next". Do NOT ask follow-ups just for the sake of it.
-- "follow_up" — ONLY if ONE OR MORE key points are CLEARLY MISSING BUT the answer is in the right context (partially correct). Generate a natural follow-up question that specifically asks about the MISSED key points to see if the candidate knows them, WITHOUT revealing the answer.
-- "skip" — if the answer is COMPLETELY off-topic, out of context from the very beginning, or if they explicitly say they don't know. No follow-up needed.
-
-${sanitizedFollowUp ? 'IMPORTANT: Since this is already a follow-up answer, you should decide "move_next" regardless. The candidate has had their chance. Do NOT request another follow-up.' : ''}
+- "move_next" — MANDATORY if the candidate demonstrates a clear understanding of the core concepts, even if their answer is concise. If they correctly use the terminology or list the required methods, treat it as covered. DO NOT be overly pedantic or demand essay-length answers. If they prove they know the answer, choose "move_next".
+- "follow_up" — Choose this if a critical concept is missing, OR if the candidate's answer is completely off-topic (e.g. they are answering a different question). Generate a natural follow-up question. If they were off-topic, politely nudge them back to the original topic in your follow-up. CRITICAL RULES: 1. NEVER repeat the exact original question verbatim. 2. NEVER give away the answer or hints.
+- "skip" — ONLY if the candidate explicitly passes on the question (e.g., "I don't know", "skip this"). Do not use skip for off-topic answers; try to redirect them instead.
 
 You MUST return ONLY a valid JSON object (no markdown, no extra text):
 {

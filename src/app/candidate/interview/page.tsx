@@ -57,6 +57,7 @@ export default function InterviewRoom() {
   // ── Evaluator 1 tracking ──────────────────────────────────────────
   const coveragePerQuestion = useRef<{ questionIndex: number, coverage: number }[]>([]);
   const questionsWithFollowUps = useRef<number>(0);
+  const followUpsPerQuestion = useRef<{ questionIndex: number, count: number }[]>([]);
   const followUpCountForCurrentQ = useRef(0);  // how many follow-ups asked for current question
   const lastQuestionText = useRef('');
   const emptyAudioAttempts = useRef(0);
@@ -470,7 +471,7 @@ export default function InterviewRoom() {
   };
 
   // ── Ask the Interviewer for next response ────────────────────────
-  const askInterviewer = async (currentTranscript: any[], followUpInstruction?: string) => {
+  const askInterviewer = async (currentTranscript: any[], followUpInstruction?: string, expectedNextQuestion?: string, repeatQuestionText?: string) => {
     try {
       const res = await fetch('/api/interviewer', {
         method: 'POST',
@@ -481,6 +482,8 @@ export default function InterviewRoom() {
           transcript: currentTranscript,
           candidateName: candidate?.name,
           ...(followUpInstruction ? { followUpInstruction } : {}),
+          ...(expectedNextQuestion ? { nextQuestionText: expectedNextQuestion } : {}),
+          ...(repeatQuestionText ? { repeatQuestionText } : {}),
         }),
       });
 
@@ -522,7 +525,13 @@ export default function InterviewRoom() {
 
   // ── Main flow: Ask the next question ─────────────────────────────
   const askNextQuestion = async (currentTranscript = transcriptRef.current) => {
-    const data = await askInterviewer(currentTranscript);
+    const nextQIndex = questionIndex.current + 1;
+    const bank = interview?.question_bank || [];
+    let expectedNextQuestionText;
+    if (nextQIndex < bank.length) {
+      expectedNextQuestionText = typeof bank[nextQIndex] === 'string' ? bank[nextQIndex] : bank[nextQIndex].question;
+    }
+    const data = await askInterviewer(currentTranscript, undefined, expectedNextQuestionText);
 
     if (data.isCompleted) {
       setIsCompleted(true);
@@ -534,6 +543,8 @@ export default function InterviewRoom() {
       await handleEndInterview();
       return;
     }
+
+    questionIndex.current = nextQIndex;
 
     const cleanedResponse = sanitizeAIOutput(data.response);
     const aiMsg = { speaker: 'AI' as 'AI', text: cleanedResponse };
@@ -569,6 +580,18 @@ export default function InterviewRoom() {
     followUpCountForCurrentQ.current += 1;
 
     await saveInterviewState();
+    await speak(cleanedResponse);
+    startListening();
+  };
+
+  // ── Repeat question (candidate asked to repeat, zero follow-up cost) ──
+  const askRepeatQuestion = async (currentQuestionText: string, currentTranscript: any[]) => {
+    const data = await askInterviewer(currentTranscript, undefined, undefined, currentQuestionText);
+    const cleanedResponse = sanitizeAIOutput(data.response);
+    const aiMsg = { speaker: 'AI' as 'AI', text: cleanedResponse };
+    transcriptRef.current.push(aiMsg);
+    setTranscript([...transcriptRef.current]);
+    // NOTE: followUpCountForCurrentQ is intentionally NOT incremented here
     await speak(cleanedResponse);
     startListening();
   };
@@ -634,6 +657,22 @@ export default function InterviewRoom() {
       }
     }
 
+    // ── Repeat/Rephrase Detection (bypass Evaluator 1, zero follow-up cost) ──
+    const REPEAT_PATTERNS = [
+      /\brepeat\b/i, /\bsay that again\b/i, /\brephrase\b/i,
+      /\bcan you repeat\b/i, /\bwhat did you say\b/i, /\bpardon\b/i,
+      /\bsorry.{0,20}(repeat|again|question)/i, /\bcould you (repeat|say|ask)/i,
+    ];
+    const isRepeatRequest = REPEAT_PATTERNS.some(p => p.test(finalAnswer));
+
+    if (isRepeatRequest && questionIndex.current >= 0) {
+      sendLogToCmd('INFO', '[Repeat Detected] Candidate asked to repeat the question. Bypassing Evaluator 1.');
+      const currentQ = interview.question_bank[questionIndex.current];
+      const currentQText = typeof currentQ === 'string' ? currentQ : currentQ?.question || '';
+      await askRepeatQuestion(currentQText, transcriptRef.current);
+      return;
+    }
+
     await saveInterviewState();
 
     // ── Evaluator 1: Check key point coverage ─────────────────────
@@ -673,6 +712,7 @@ export default function InterviewRoom() {
     }
 
     // No key points, or Evaluator 1 said move on / max follow-ups reached → next question
+    followUpsPerQuestion.current.push({ questionIndex: questionIndex.current, count: followUpCountForCurrentQ.current });
     followUpCountForCurrentQ.current = 0;
     await askNextQuestion(transcriptRef.current);
   };
@@ -770,6 +810,16 @@ export default function InterviewRoom() {
       ? coverages.reduce((sum, c) => sum + c.coverage, 0) / coverages.length 
       : 0;
 
+    const coverageData = {
+      average_coverage: avgCoverage,
+      per_question: coverages,
+    };
+
+    const followUpData = {
+      questions_with_follow_ups: questionsWithFollowUps.current,
+      per_question: followUpsPerQuestion.current,
+      total_questions: totalQuestions,
+    };
     const coverageData = { average_coverage: avgCoverage, per_question: coverages };
     const followUpData = { questions_with_follow_ups: questionsWithFollowUps.current, total_questions: totalQuestions };
 

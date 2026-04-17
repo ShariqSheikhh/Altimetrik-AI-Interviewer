@@ -130,12 +130,15 @@ export async function POST(req: Request) {
   console.log(`\n================= [INTERVIEWER API: START] =================`);
   try {
     const body = await req.json();
-    const { action, questionBank, transcript, followUpInstruction, candidateName } = body;
+    const { action, questionBank, transcript, followUpInstruction, nextQuestionText, repeatQuestionText, candidateName } = body;
     console.log(`[Interviewer] Received Action: ${action}`);
     console.log(`[Interviewer] Follow-Up Instruction? ${!!followUpInstruction}`);
     console.log(`[Interviewer] Question Bank Size: ${questionBank?.length || 0}`);
     console.log(`[Interviewer] Transcript length: ${transcript?.length || 0}`);
     console.log(`[Interviewer] Candidate Name: ${candidateName || 'N/A'}`);
+    console.log(`[Interviewer] Next Question Provided: ${!!nextQuestionText}`);
+    console.log(`[Interviewer] Repeat Question Requested: ${!!repeatQuestionText}`);
+    console.log(`[Interviewer] Follow-Up Instruction? ${!!followUpInstruction}`);
     
     // ── Input validation ──────────────────────────────────────────
     if (!action || typeof action !== 'string') {
@@ -160,11 +163,15 @@ export async function POST(req: Request) {
         return `${i + 1}. ${questionText}`;
       }).join('\n');
 
-      let systemInstruction = `${INTERVIEW_SYSTEM_PROMPT}\n\nThe candidate's name is ${candidateName || 'Candidate'}. Address them by their name when appropriate.\n\n[Interview Questions — ask in this exact order]\n${questionsBlock}`;
+      let systemInstruction = `${INTERVIEW_SYSTEM_PROMPT}\n\nThe candidate's name is ${candidateName || 'Candidate'}. Address them by their name when appropriate.\n\n[Interview Questions for Reference]\n${questionsBlock}`;
 
-      // If there's a follow-up instruction from Evaluator 1, inject it
-      if (followUpInstruction) {
-        systemInstruction += `\n\n[FOLLOW-UP INSTRUCTION]\nThe evaluator has determined the candidate's last answer was incomplete. Ask this follow-up question naturally and conversationally: "${followUpInstruction}"\nDo NOT move to the next question yet. Ask this follow-up first.`;
+      // Priority hierarchy: repeat > follow-up > next question
+      if (repeatQuestionText) {
+        systemInstruction += `\n\n[PRIORITY INSTRUCTION: REPEAT QUESTION]\nThe candidate has asked you to repeat or rephrase the question. You MUST re-ask the following question naturally — do NOT just read it verbatim, rephrase it conversationally. Do NOT move to the next question:\n"${repeatQuestionText}"`;
+      } else if (followUpInstruction) {
+        systemInstruction += `\n\n[PRIORITY INSTRUCTION: FOLLOW-UP]\nThe evaluator has determined the candidate's last answer was incomplete. You MUST ask this follow-up question naturally and conversationally:\n"${followUpInstruction}"\nDo NOT move to the next main question yet.`;
+      } else if (nextQuestionText) {
+        systemInstruction += `\n\n[PRIORITY INSTRUCTION: NEXT QUESTION]\nThe previous question has been completed. You MUST ask the FOLLOWING question next:\n"${nextQuestionText}"\n\nABSOLUTE RULE: You MUST ask this exact question next, even if you believe the candidate has already answered it previously in the conversation. Do NOT skip it under any circumstances.`;
       }
 
       // Sanitize transcript entries
