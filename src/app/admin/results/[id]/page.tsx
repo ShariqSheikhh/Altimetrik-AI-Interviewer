@@ -102,6 +102,8 @@ export default function ResultDetails() {
   const [fetchingUrl, setFetchingUrl] = useState(false);
   const [videoError, setVideoError] = useState(false);
   const [stitchingStatus, setStitchingStatus] = useState<string | null>(null);
+  const [segmentUrls, setSegmentUrls] = useState<string[]>([]);
+  const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
 
   useEffect(() => {
     if (!params.id) return;
@@ -139,18 +141,18 @@ export default function ResultDetails() {
                     return;
                 }
 
-                setStitchingStatus(`Stitching ${segments.length} segments...`);
-
+                setSegmentUrls(segments);
+                setCurrentSegmentIndex(0);
+                setPresignedUrl(segments[0]);
+                
+                // For direct download, we still create a master blob
                 const segmentBlobs = await Promise.all(
                     segments.map(async (url: string) => {
                         const res = await fetch(url);
                         return await res.blob();
                     })
                 );
-
                 const masterBlob = new Blob(segmentBlobs, { type: 'video/webm' });
-                const blobUrl = URL.createObjectURL(masterBlob);
-                setPresignedUrl(blobUrl);
                 
                 // --- NEW: Finalize and Upload single file for future use ---
                 setStitchingStatus('Finalizing video for permanent storage...');
@@ -308,34 +310,50 @@ export default function ResultDetails() {
               </h3>
             </div>
             <div className="p-10 space-y-12">
-              {result.transcript_data?.full_transcript?.map((item: any, i: number) => (
-                <div key={i} className="relative pl-12 border-l-2 border-slate-100 space-y-6">
-                  <div className="absolute -left-[13px] top-0 w-6 h-6 rounded-lg bg-blue-600 text-white flex items-center justify-center font-black text-[10px] shadow-lg shadow-blue-500/30">
-                    {i + 1}
-                  </div>
-                  <div className="space-y-4">
-                    <div className="bg-slate-50 border border-slate-100 p-6 rounded-[2rem] rounded-tl-none shadow-sm">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Altimetrik AI</span>
-                      <p className="text-slate-800 font-bold leading-relaxed">{item.q}</p>
-                    </div>
-                    <div className="bg-blue-600 p-6 rounded-[2rem] rounded-tr-none shadow-lg shadow-blue-600/10 text-white">
-                      <span className="text-[10px] font-bold text-blue-200 uppercase tracking-widest block mb-2">Candidate</span>
-                      <p className="leading-relaxed font-medium">{item.a || 'No response recorded.'}</p>
-                    </div>
-                    {item.followUp && (
-                      <div className="pl-6 space-y-4">
-                        <div className="bg-blue-50 border border-blue-100 p-5 rounded-2xl border-l-4 border-l-blue-400">
-                          <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest block mb-2">Probing Follow-Up</span>
-                          <p className="text-blue-800 font-semibold italic">&ldquo;{item.followUp}&rdquo;</p>
+              {result.transcript_data?.full_transcript?.map((item: any, i: number) => {
+                if (item.isBreak || item.speaker === 'System') {
+                  return (
+                    <div key={i} className="flex items-center gap-4 py-8">
+                      <div className="h-[1px] bg-slate-200 grow" />
+                      <div className="px-4 py-1.5 bg-slate-50 border border-slate-200 rounded-full flex flex-col items-center gap-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle size={12} className="text-amber-500" /> Session Interrupted & Resumed
                         </div>
-                        <div className="bg-white border border-blue-200 p-5 rounded-2xl shadow-sm text-blue-900">
-                          <p className="leading-relaxed font-medium">{item.followUpAnswer || 'No specific follow-up response audible.'}</p>
-                        </div>
+                        {item.timestamp && <span className="text-[9px] lowercase font-medium text-slate-400">at {item.timestamp}</span>}
                       </div>
-                    )}
+                      <div className="h-[1px] bg-slate-200 grow" />
+                    </div>
+                  );
+                }
+                return (
+                  <div key={i} className="relative pl-12 border-l-2 border-slate-100 space-y-6">
+                    <div className="absolute -left-[13px] top-0 w-6 h-6 rounded-lg bg-blue-600 text-white flex items-center justify-center font-black text-[10px] shadow-lg shadow-blue-500/30">
+                      {i + 1}
+                    </div>
+                    <div className="space-y-4">
+                      <div className="bg-slate-50 border border-slate-100 p-6 rounded-[2rem] rounded-tl-none shadow-sm">
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Altimetrik AI</span>
+                        <p className="text-slate-800 font-bold leading-relaxed">{item.q}</p>
+                      </div>
+                      <div className="bg-blue-600 p-6 rounded-[2rem] rounded-tr-none shadow-lg shadow-blue-600/10 text-white">
+                        <span className="text-[10px] font-bold text-blue-200 uppercase tracking-widest block mb-2">Candidate</span>
+                        <p className="leading-relaxed font-medium">{item.a || 'No response recorded.'}</p>
+                      </div>
+                      {item.followUp && (
+                        <div className="pl-6 space-y-4">
+                          <div className="bg-blue-50 border border-blue-100 p-5 rounded-2xl border-l-4 border-l-blue-400">
+                            <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest block mb-2">Probing Follow-Up</span>
+                            <p className="text-blue-800 font-semibold italic">&ldquo;{item.followUp}&rdquo;</p>
+                          </div>
+                          <div className="bg-white border border-blue-200 p-5 rounded-2xl shadow-sm text-blue-900">
+                            <p className="leading-relaxed font-medium">{item.followUpAnswer || 'No specific follow-up response audible.'}</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
@@ -377,13 +395,26 @@ export default function ResultDetails() {
                       <p className="text-slate-400 text-sm font-bold">{stitchingStatus || 'Generating Secure Access URL...'}</p>
                     </div>
                   ) : (
-                <video
-                  src={presignedUrl}
-                  controls
-                  className="w-full h-full"
-                  preload="metadata"
-                  onError={() => setVideoError(true)}
-                />
+                <div className="relative w-full h-full group">
+                  <video
+                    src={segmentUrls.length > 0 ? segmentUrls[currentSegmentIndex] : presignedUrl}
+                    controls
+                    autoPlay={currentSegmentIndex > 0}
+                    className="w-full h-full"
+                    preload="auto"
+                    onEnded={() => {
+                      if (currentSegmentIndex < segmentUrls.length - 1) {
+                        setCurrentSegmentIndex(prev => prev + 1);
+                      }
+                    }}
+                    onError={() => setVideoError(true)}
+                  />
+                  {segmentUrls.length > 1 && (
+                    <div className="absolute top-4 right-4 px-3 py-1.5 bg-black/60 backdrop-blur-md rounded-lg text-[10px] font-black text-white/90 uppercase tracking-widest border border-white/10 pointer-events-none transition-opacity group-hover:opacity-100 opacity-0">
+                      Clip {currentSegmentIndex + 1} of {segmentUrls.length}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </div>

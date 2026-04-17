@@ -245,8 +245,10 @@ export default function InterviewRoom() {
         if (state.questionsWithFollowUps) questionsWithFollowUps.current = state.questionsWithFollowUps;
         if (state.followUpCountForCurrentQ) followUpCountForCurrentQ.current = state.followUpCountForCurrentQ;
         
-        // Restore Segment Count for ordering
-        if (cData.s3_uploaded_parts) {
+        // Restore Segment Count for ordering from state (more reliable than part list)
+        if (state.segmentIndex !== undefined) {
+          segmentIndexRef.current = state.segmentIndex + 1;
+        } else if (cData.s3_uploaded_parts) {
           segmentIndexRef.current = cData.s3_uploaded_parts.length + 1;
         }
         
@@ -461,6 +463,7 @@ export default function InterviewRoom() {
       coveragePerQuestion: coveragePerQuestion.current,
       questionsWithFollowUps: questionsWithFollowUps.current,
       followUpCountForCurrentQ: followUpCountForCurrentQ.current,
+      segmentIndex: segmentIndexRef.current,
     };
 
     try {
@@ -473,7 +476,7 @@ export default function InterviewRoom() {
   };
 
   // ── Ask the Interviewer for next response ────────────────────────
-  const askInterviewer = async (currentTranscript: any[], followUpInstruction?: string, expectedNextQuestion?: string, repeatQuestionText?: string) => {
+  const askInterviewer = async (currentTranscript: any[], followUpInstruction?: string, expectedNextQuestion?: string, repeatQuestionText?: string, isResumeFlag?: boolean) => {
     try {
       const res = await fetch('/api/interviewer', {
         method: 'POST',
@@ -486,6 +489,7 @@ export default function InterviewRoom() {
           ...(followUpInstruction ? { followUpInstruction } : {}),
           ...(expectedNextQuestion ? { nextQuestionText: expectedNextQuestion } : {}),
           ...(repeatQuestionText ? { repeatQuestionText } : {}),
+          isResume: currentTranscript.length > 0 && !!expectedNextQuestion === false && !!followUpInstruction === false && !!repeatQuestionText === false && isResumeFlag,
         }),
       });
 
@@ -526,10 +530,10 @@ export default function InterviewRoom() {
   };
 
   // ── Main flow: Ask the next question ─────────────────────────────
-  const askNextQuestion = async (currentTranscript = transcriptRef.current) => {
+  const askNextQuestion = async (currentTranscript = transcriptRef.current, isResume = false) => {
     // Fully LLM-driven: we no longer pass the expected next question text.
     // The AI scans the transcript and selects the next question itself.
-    const data = await askInterviewer(currentTranscript, undefined, undefined);
+    const data = await askInterviewer(currentTranscript, undefined, undefined, undefined, isResume);
 
     if (data.isCompleted) {
       setIsCompleted(true);
@@ -549,7 +553,7 @@ export default function InterviewRoom() {
        // We are still in Readiness/Intro phase
     } else {
        // Normal progression for technical questions if LLM forgets to return index
-       questionIndex.current = nextQIndex;
+       questionIndex.current = questionIndex.current + 1;
     }
 
     const cleanedResponse = sanitizeAIOutput(data.response);
@@ -790,16 +794,19 @@ export default function InterviewRoom() {
     }
 
     if (isResumingRef.current) {
-      const lastMsg = transcriptRef.current[transcriptRef.current.length - 1];
-      if (lastMsg?.speaker === 'AI') {
-        const msg = `Welcome back! I've restored our session. To pick up where we left off, I was asking about your thoughts on ${lastMsg.text.length > 50 ? lastMsg.text.substring(0, 50) + '...' : lastMsg.text}. Let's continue.`;
-        await speak(msg);
-        startListening();
-      } else {
-        const msg = `Welcome back. I've restored your progress. Let's continue with the assessment.`;
-        await speak(msg);
-        await askNextQuestion();
-      }
+      // Record a session break in the transcript with timestamp
+      const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const breakMsg = { 
+        speaker: 'System' as any, 
+        text: `[SESSION INTERRUPTED - RESUMED AT ${timestamp}]`, 
+        timestamp,
+        isBreak: true 
+      };
+      transcriptRef.current.push(breakMsg);
+      setTranscript([...transcriptRef.current]);
+
+      // Fully LLM-driven resume: simply call askNextQuestion with the resume flag.
+      await askNextQuestion(transcriptRef.current, true);
       isResumingRef.current = false;
     } else {
       await askNextQuestion();
