@@ -197,12 +197,12 @@ export default function InterviewStatusPage() {
                     </td>
                     <td className="px-8 py-5">
                       {(candidate.result?.evaluation?.score !== undefined && candidate.result?.evaluation?.score !== null) ? (
-                        <div className={`inline-flex items-center px-3 py-1 rounded-full text-[11px] font-black tracking-wider uppercase ${
-                            candidate.result.evaluation.score >= 70 ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
-                            candidate.result.evaluation.score >= 50 ? 'bg-orange-50 text-orange-600 border border-orange-100' :
-                            'bg-red-50 text-red-600 border border-red-100'
+                        <div className={`inline-flex items-center px-3 py-1 rounded-full text-[11px] font-black tracking-wider uppercase border ${
+                            candidate.result.evaluation.score > 80 ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
+                            candidate.result.evaluation.score < 50 ? 'bg-red-50 text-red-600 border border-red-100' :
+                            'bg-amber-50 text-amber-600 border border-amber-100'
                         }`}>
-                            {candidate.result.evaluation.score}% Score
+                            {candidate.result.evaluation.score > 80 ? 'Accept' : candidate.result.evaluation.score < 50 ? 'Reject' : 'Human Eval'} ({candidate.result.evaluation.score}%)
                         </div>
                       ) : (
                         <span className="text-slate-400 font-medium text-xs tracking-tight italic">No result yet</span>

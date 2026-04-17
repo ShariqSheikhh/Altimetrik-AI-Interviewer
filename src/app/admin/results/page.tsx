@@ -55,7 +55,7 @@ export default function AllResultsPage() {
                   <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Candidate Profile</th>
                   <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Test Identity</th>
                   <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Timestamp</th>
-                  <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Performance Index</th>
+                  <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Recommendation</th>
                   <th className="px-10 py-6 text-right"></th>
                 </tr>
               </thead>
@@ -85,11 +85,11 @@ export default function AllResultsPage() {
                     <td className="px-10 py-8">
                         {(res.evaluation?.score !== undefined && res.evaluation?.score !== null) ? (
                             <div className={`inline-flex items-center px-4 py-2 rounded-2xl text-xs font-black tracking-widest uppercase border shadow-sm ${
-                                res.evaluation.score >= 70 ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
-                                res.evaluation.score >= 50 ? 'bg-orange-50 text-orange-600 border-orange-100' :
-                                'bg-red-50 text-red-600 border-red-100'
+                                res.evaluation.score > 80 ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
+                                res.evaluation.score < 50 ? 'bg-red-50 text-red-600 border-red-100' :
+                                'bg-amber-50 text-amber-600 border-amber-100'
                             }`}>
-                                {res.evaluation.score}% Score
+                                {res.evaluation.score > 80 ? 'Accept' : res.evaluation.score < 50 ? 'Reject' : 'Human Eval'} ({res.evaluation.score}%)
                             </div>
                         ) : (
                             <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 text-slate-400 rounded-xl text-[10px] font-black uppercase tracking-widest border border-slate-100">

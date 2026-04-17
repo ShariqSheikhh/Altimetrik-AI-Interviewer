@@ -78,7 +78,7 @@ export default function AdminDashboard() {
                                         <tr className="bg-slate-50/50 border-b border-slate-100">
                                             <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.15em]">Candidate Profile</th>
                                             <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.15em]">Applied Context</th>
-                                            <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.15em]">Score</th>
+                                            <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.15em]">Recommendation</th>
                                             <th className="px-6 py-5 text-right"></th>
                                         </tr>
                                     </thead>
@@ -94,11 +94,12 @@ export default function AdminDashboard() {
                                                 </td>
                                                 <td className="px-6 py-5">
                                                     {(res.evaluation?.score !== undefined && res.evaluation?.score !== null) ? (
-                                                        <div className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-black tracking-widest uppercase border ${res.evaluation.score >= 70 ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
-                                                                res.evaluation.score >= 50 ? 'bg-orange-50 text-orange-600 border-orange-100' :
-                                                                    'bg-red-50 text-red-600 border-red-100'
+                                                        <div className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-black tracking-widest uppercase border ${
+                                                                res.evaluation.score > 80 ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
+                                                                res.evaluation.score < 50 ? 'bg-red-50 text-red-600 border-red-100' :
+                                                                'bg-amber-50 text-amber-600 border-amber-100'
                                                             }`}>
-                                                            {res.evaluation.score}%
+                                                            {res.evaluation.score > 80 ? 'Accept' : res.evaluation.score < 50 ? 'Reject' : 'Human Eval'}
                                                         </div>
                                                     ) : <span className="text-slate-300 italic text-xs font-bold tracking-tight">Analyzing...</span>}
                                                 </td>

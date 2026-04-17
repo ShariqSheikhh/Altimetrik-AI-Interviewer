@@ -218,6 +218,8 @@ export default function ResultDetails() {
   );
 
   const score = result.evaluation?.score ?? 0;
+  const recommendation = score > 80 ? 'Accept' : score < 50 ? 'Reject' : 'Human Evaluation Required';
+  const recColor = score > 80 ? 'emerald' : score < 50 ? 'red' : 'amber';
   const isGood = score >= 60;
   const perQResults: any[] = result.evaluation?.per_question_results ?? [];
   const questionBank: any[] = result.interviews?.question_bank ?? [];
@@ -245,11 +247,18 @@ export default function ResultDetails() {
           </div>
         </div>
 
-        <div className={`px-10 py-5 rounded-[2rem] flex flex-col items-center border-2 ${isGood ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-red-50 border-red-100 text-red-700'} shadow-2xl`}>
-          <span className="text-[10px] font-black uppercase tracking-[0.2em] mb-1 opacity-60">Overall Score</span>
+        <div className={`px-10 py-5 rounded-[2rem] flex flex-col items-center border-2 shadow-2xl ${
+          score > 80 ? 'bg-emerald-50 border-emerald-100 text-emerald-700' :
+          score < 50 ? 'bg-red-50 border-red-100 text-red-700' :
+          'bg-amber-50 border-amber-100 text-amber-700'
+        }`}>
+          <span className="text-[10px] font-black uppercase tracking-[0.2em] mb-1 opacity-60">Final Recommendation</span>
+          <div className="flex items-baseline gap-1 mb-1">
+            <span className="text-xl font-black tracking-tight">{recommendation}</span>
+          </div>
           <div className="flex items-baseline gap-1">
-            <span className="text-4xl font-black tracking-tighter">{score}</span>
-            <span className="text-xl font-bold opacity-60">/100</span>
+            <span className="text-2xl font-black tracking-tighter">{score}</span>
+            <span className="text-sm font-bold opacity-60">/100</span>
           </div>
           <span className="text-[10px] opacity-50 mt-1">Avg of {perQResults.length} question(s)</span>
         </div>
