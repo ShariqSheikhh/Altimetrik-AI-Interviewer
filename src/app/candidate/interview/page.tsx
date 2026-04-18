@@ -487,6 +487,7 @@ export default function InterviewRoom() {
           questionBank: interview.question_bank,
           transcript: currentTranscript,
           candidateName: candidate?.name,
+          isIntroPhase: questionIndex.current < 0,
           ...(followUpInstruction ? { followUpInstruction } : {}),
           ...(expectedNextQuestion ? { nextQuestionText: expectedNextQuestion } : {}),
           ...(repeatQuestionText ? { repeatQuestionText } : {}),
@@ -599,8 +600,8 @@ export default function InterviewRoom() {
   };
 
   // ── Repeat question (candidate asked to repeat, zero follow-up cost) ──
-  const askRepeatQuestion = async (currentQuestionText: string, currentTranscript: any[]) => {
-    const data = await askInterviewer(currentTranscript, undefined, undefined, currentQuestionText);
+  const askRepeatQuestion = async (currentQuestionText: string, currentTranscript: any[], isResumeFlag = false) => {
+    const data = await askInterviewer(currentTranscript, undefined, undefined, currentQuestionText, isResumeFlag);
     const cleanedResponse = sanitizeAIOutput(data.response);
     const aiMsg = { speaker: 'AI' as 'AI', text: cleanedResponse };
     transcriptRef.current.push(aiMsg);
@@ -827,8 +828,54 @@ export default function InterviewRoom() {
       candidateAnswers.current.push({ ...breakMsg } as any);
       await saveInterviewState(); // Persist the incremented session count
 
-      // Fully LLM-driven resume: simply call askNextQuestion with the resume flag.
-      await askNextQuestion(transcriptRef.current, true);
+      const transcriptCopy = [...transcriptRef.current].filter((m: any) => m.speaker === 'Candidate' || m.speaker === 'AI');
+      const lastMessage = transcriptCopy.length > 0 ? transcriptCopy[transcriptCopy.length - 1] : null;
+
+      if (lastMessage && lastMessage.speaker === 'Candidate') {
+        const finalAnswer = lastMessage.text;
+        
+        // ── Evaluator 1: Check key point coverage for the resumed answer ─────────────────────
+        const keyPoints = questionIndex.current >= 0 ? getKeyPointsForQuestion(questionIndex.current) : [];
+        if (keyPoints.length > 0 && questionIndex.current >= 0) {
+          const lastEntry = [...candidateAnswers.current].reverse().find((e:any) => !e.isBreak && e.q);
+          const originalQuestion = interview?.question_bank[questionIndex.current]?.question || (lastEntry ? lastEntry.q : '');
+
+          const liveResult = await callLiveEvaluator(
+            originalQuestion,
+            lastEntry?.a || '',
+            keyPoints,
+            followUpCountForCurrentQ.current > 0 ? finalAnswer : undefined
+          );
+
+          sendLogToCmd('INFO', '[Evaluator 1 - Resume] Decision', { decision: liveResult.decision });
+
+          coveragePerQuestion.current.push({
+            questionIndex: questionIndex.current,
+            coverage: liveResult.coverage_percentage || 0,
+          });
+
+          const maxFollowUps = getFollowUpDepth(questionIndex.current);
+          const canAskFollowUp = followUpCountForCurrentQ.current < maxFollowUps;
+
+          if (liveResult.decision === 'follow_up' && canAskFollowUp && liveResult.follow_up_question) {
+            await askFollowUp(liveResult.follow_up_question, transcriptRef.current);
+            isResumingRef.current = false;
+            return;
+          }
+        }
+
+        // If no follow up, move to next question
+        followUpsPerQuestion.current.push({ questionIndex: questionIndex.current, count: followUpCountForCurrentQ.current });
+        followUpCountForCurrentQ.current = 0;
+        await askNextQuestion(transcriptRef.current);
+
+      } else if (lastMessage && lastMessage.speaker === 'AI') {
+        sendLogToCmd('INFO', 'Resuming session: Repeating last AI question');
+        await askRepeatQuestion(lastMessage.text, transcriptRef.current, true);
+      } else {
+        await askNextQuestion(transcriptRef.current, true);
+      }
+
       isResumingRef.current = false;
     } else {
       // Start of first session
