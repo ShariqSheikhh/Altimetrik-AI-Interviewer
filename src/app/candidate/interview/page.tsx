@@ -49,7 +49,7 @@ export default function InterviewRoom() {
   const isListeningRef = useRef(false); // ref mirror of isListening — safe to read in closures
 
   const questionIndex = useRef(-1);
-  const candidateAnswers = useRef<{ q: string, a: string, followUp?: string, followUpAnswer?: string }[]>([]);
+  const candidateAnswers = useRef<{ q?: string, a?: string, followUp?: string, followUpAnswer?: string, followUps?: { q: string, a: string }[], isBreak?: boolean, sessionNo?: number, timestamp?: string, speaker?: string, text?: string }[]>([]);
   const finalizedTextRef = useRef('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const selectedVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
@@ -246,21 +246,14 @@ export default function InterviewRoom() {
         if (state.questionsWithFollowUps) questionsWithFollowUps.current = state.questionsWithFollowUps;
         if (state.followUpCountForCurrentQ) followUpCountForCurrentQ.current = state.followUpCountForCurrentQ;
         
-        // NEW: Increment Session Count on Resume
-        const prevSessionCount = state.sessionCount || 1;
-        sessionCountRef.current = prevSessionCount + 1;
+        // NEW: Load Session Count on Resume (don't increment yet)
+        sessionCountRef.current = state.sessionCount || 1;
         
         // Reset segment index for the new session
         segmentIndexRef.current = 1;
         
-        // Save the new session count immediately to the existing state
-        const newState = { ...state, sessionCount: sessionCountRef.current, segmentIndex: 1 };
-        await supabase.from('candidates').update({
-          session_state: newState,
-        }).eq('id', cid);
-        
         isResumingRef.current = true;
-        sendLogToCmd('INFO', `Interview state restored. Starting Session: ${sessionCountRef.current}`);
+        sendLogToCmd('INFO', `Interview state restored. Pending Resume from Session: ${sessionCountRef.current}`);
       }
 
       try {
@@ -572,9 +565,7 @@ export default function InterviewRoom() {
     // Track the question
     lastQuestionText.current = cleanedResponse;
     followUpCountForCurrentQ.current = 0;  // reset follow-up counter for new question
-    candidateAnswers.current.push({ q: cleanedResponse, a: '' });
-
-    // (Moved logic above for better flow)
+    candidateAnswers.current.push({ q: cleanedResponse, a: '', followUps: [] });
 
     await saveInterviewState();
     await speak(cleanedResponse);
@@ -594,6 +585,13 @@ export default function InterviewRoom() {
       questionsWithFollowUps.current += 1;
     }
     followUpCountForCurrentQ.current += 1;
+
+    // Track in current technical question
+    if (candidateAnswers.current.length > 0) {
+      const lastEntry = candidateAnswers.current[candidateAnswers.current.length - 1];
+      if (!lastEntry.followUps) lastEntry.followUps = [];
+      lastEntry.followUps.push({ q: cleanedResponse, a: '' });
+    }
 
     await saveInterviewState();
     await speak(cleanedResponse);
@@ -666,8 +664,8 @@ export default function InterviewRoom() {
     // Fill the answer for the last question the AI asked
     if (candidateAnswers.current.length > 0) {
       const lastEntry = candidateAnswers.current[candidateAnswers.current.length - 1];
-      if (followUpCountForCurrentQ.current > 0) {
-        lastEntry.followUpAnswer = finalAnswer;
+      if (followUpCountForCurrentQ.current > 0 && lastEntry.followUps && lastEntry.followUps.length > 0) {
+        lastEntry.followUps[lastEntry.followUps.length - 1].a = finalAnswer;
       } else {
         lastEntry.a = finalAnswer;
       }
@@ -701,7 +699,7 @@ export default function InterviewRoom() {
 
       const liveResult = await callLiveEvaluator(
         originalQuestion,
-        lastEntry.a,
+        lastEntry.a || '',
         keyPoints,
         followUpCountForCurrentQ.current > 0 ? finalAnswer : undefined
       );
@@ -719,7 +717,6 @@ export default function InterviewRoom() {
 
       if (liveResult.decision === 'follow_up' && canAskFollowUp && liveResult.follow_up_question) {
         // Evaluator 1 says: ask a follow-up (within allowed depth)
-        if (lastEntry) lastEntry.followUp = liveResult.follow_up_question;
         await askFollowUp(liveResult.follow_up_question, transcriptRef.current);
         return;
       }
@@ -811,21 +808,39 @@ export default function InterviewRoom() {
     }
 
     if (isResumingRef.current) {
+      // Increment Session Count on actual resumption
+      sessionCountRef.current += 1;
+
       // Record a session break in the transcript with timestamp
       const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       const breakMsg = { 
         speaker: 'System' as any, 
         text: `[SESSION INTERRUPTED - RESUMED AT ${timestamp}]`, 
         timestamp,
-        isBreak: true 
+        isBreak: true,
+        sessionNo: sessionCountRef.current
       };
       transcriptRef.current.push(breakMsg);
       setTranscript([...transcriptRef.current]);
+      
+      // Also record in the saved structured transcript
+      candidateAnswers.current.push({ ...breakMsg } as any);
+      await saveInterviewState(); // Persist the incremented session count
 
       // Fully LLM-driven resume: simply call askNextQuestion with the resume flag.
       await askNextQuestion(transcriptRef.current, true);
       isResumingRef.current = false;
     } else {
+      // Start of first session
+      const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      candidateAnswers.current.push({
+        isBreak: true,
+        sessionNo: 1,
+        timestamp,
+        speaker: 'System' as any,
+        text: `[SESSION 01 STARTED AT ${timestamp}]`
+      } as any);
+      
       await askNextQuestion();
     }
   };
@@ -900,7 +915,7 @@ export default function InterviewRoom() {
         candidate_id: candidate.id,
         interview_id: interview.id,
         evaluation: finalEvaluation,
-        transcript_data: { full_transcript: candidateAnswers.current.filter((item) => item.a !== '') },
+        transcript_data: { full_transcript: candidateAnswers.current.filter((item) => item.a !== '' || item.isBreak) },
         video_url: finalVideoUrl
       }]);
 

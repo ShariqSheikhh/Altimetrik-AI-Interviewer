@@ -393,26 +393,33 @@ export default function ResultDetails() {
                 <FileText size={16} className="text-blue-500" /> Interview Dialogue
               </h3>
             </div>
-            <div className="p-10 space-y-12">
+            <div className="p-10 space-y-8">
               {result.transcript_data?.full_transcript?.map((item: any, i: number) => {
                 if (item.isBreak || item.speaker === 'System') {
+                  const sessionNo = item.sessionNo || (i === 0 ? 1 : '');
                   return (
-                    <div key={i} className="flex items-center gap-4 py-8">
-                      <div className="h-[1px] bg-slate-200 grow" />
-                      <div className="px-4 py-1.5 bg-slate-50 border border-slate-200 rounded-full flex flex-col items-center gap-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">
-                        <div className="flex items-center gap-2">
-                          <AlertTriangle size={12} className="text-amber-500" /> Session Interrupted & Resumed
-                        </div>
-                        {item.timestamp && <span className="text-[9px] lowercase font-medium text-slate-400">at {item.timestamp}</span>}
+                    <div key={i} className="flex items-center gap-6 py-4">
+                      <div className="h-[2px] bg-red-500 grow" />
+                      <div className="shrink-0 flex items-center gap-3 px-6 py-2 bg-red-50 border-2 border-red-200 rounded-2xl">
+                        <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                        <span className="text-xs font-black text-red-600 uppercase tracking-[0.2em]">
+                          Session {sessionNo ? String(sessionNo).padStart(2, '0') : ''} Started at {item.timestamp || 'unknown'}
+                        </span>
                       </div>
-                      <div className="h-[1px] bg-slate-200 grow" />
+                      <div className="h-[2px] bg-red-500 grow" />
                     </div>
                   );
                 }
+                
+                // Track actual question numbers (exclude breaks)
+                const questionNumber = result.transcript_data?.full_transcript
+                  ? result.transcript_data.full_transcript.slice(0, i + 1).filter((t: any) => t.q && !t.isBreak).length
+                  : i + 1;
+
                 return (
                   <div key={i} className="relative pl-12 border-l-2 border-slate-100 space-y-6">
                     <div className="absolute -left-[13px] top-0 w-6 h-6 rounded-lg bg-blue-600 text-white flex items-center justify-center font-black text-[10px] shadow-lg shadow-blue-500/30">
-                      {i + 1}
+                      {questionNumber}
                     </div>
                     <div className="space-y-4">
                       <div className="bg-slate-50 border border-slate-100 p-6 rounded-[2rem] rounded-tl-none shadow-sm">
@@ -423,15 +430,19 @@ export default function ResultDetails() {
                         <span className="text-[10px] font-bold text-blue-200 uppercase tracking-widest block mb-2">Candidate</span>
                         <p className="leading-relaxed font-medium">{item.a || 'No response recorded.'}</p>
                       </div>
-                      {item.followUp && (
-                        <div className="pl-6 space-y-4">
-                          <div className="bg-blue-50 border border-blue-100 p-5 rounded-2xl border-l-4 border-l-blue-400">
-                            <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest block mb-2">Probing Follow-Up</span>
-                            <p className="text-blue-800 font-semibold italic">&ldquo;{item.followUp}&rdquo;</p>
-                          </div>
-                          <div className="bg-white border border-blue-200 p-5 rounded-2xl shadow-sm text-blue-900">
-                            <p className="leading-relaxed font-medium">{item.followUpAnswer || 'No specific follow-up response audible.'}</p>
-                          </div>
+                      {(item.followUps || item.followUp) && (
+                        <div className="pl-6 space-y-8 mt-6">
+                          {(item.followUps || [{ q: item.followUp, a: item.followUpAnswer }]).map((fur: any, fIdx: number) => (
+                            <div key={fIdx} className="space-y-4">
+                              <div className="bg-blue-50 border border-blue-100 p-5 rounded-2xl border-l-4 border-l-blue-400">
+                                <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest block mb-2">Probing Follow-Up {item.followUps ? fIdx + 1 : ''}</span>
+                                <p className="text-blue-800 font-semibold italic">&ldquo;{fur.q}&rdquo;</p>
+                              </div>
+                              <div className="bg-white border border-blue-200 p-5 rounded-2xl shadow-sm text-blue-900">
+                                <p className="leading-relaxed font-medium">{fur.a || 'No specific follow-up response audible.'}</p>
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>

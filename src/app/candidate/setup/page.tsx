@@ -13,13 +13,13 @@ export default function CandidateSetup() {
   const [interview, setInterview] = useState<any>(null);
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(true);
-  
+
   // System check states
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [micLevel, setMicLevel] = useState(0);
   const [sysCheckStatus, setSysCheckStatus] = useState<'idle' | 'checking' | 'passed' | 'failed'>('idle');
   const [setupError, setSetupError] = useState('');
-  
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyzerRef = useRef<AnalyserNode | null>(null);
@@ -70,20 +70,20 @@ export default function CandidateSetup() {
     fetchData();
 
     return () => {
-        stream?.getTracks().forEach(t => t.stop());
+      stream?.getTracks().forEach(t => t.stop());
     };
   }, [router]);
 
   const runSystemCheck = async () => {
     setSysCheckStatus('checking');
     setSetupError('');
-    
+
     try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({ 
-        video: true, 
-        audio: true 
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true
       });
-      
+
       setStream(mediaStream);
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
@@ -110,10 +110,10 @@ export default function CandidateSetup() {
         setMicLevel(average);
         requestAnimationFrame(checkAudioLevel);
       };
-      
+
       checkAudioLevel();
       setTimeout(() => setSysCheckStatus('passed'), 2000);
-      
+
     } catch (err: any) {
       setSetupError('Failed to access Camera or Microphone. Please allow permissions.');
       setSysCheckStatus('failed');
@@ -125,7 +125,7 @@ export default function CandidateSetup() {
       setSetupError('Please enter your full name.');
       return;
     }
-    
+
     // Save candidate name
     if (name !== candidate?.name) {
       await supabase
@@ -141,95 +141,92 @@ export default function CandidateSetup() {
     } catch (err) {
       console.warn('Full screen request failed:', err);
     }
-    
+
     router.push('/candidate/interview');
   };
 
   if (loading) {
     return (
-        <div className="min-h-screen bg-[#fcfdfd] flex items-center justify-center">
-            <Loader2 className="animate-spin text-blue-500" size={32} />
-        </div>
+      <div className="min-h-screen bg-[#fcfdfd] flex items-center justify-center">
+        <Loader2 className="animate-spin text-blue-500" size={32} />
+      </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-[#fcfdfd] text-slate-800 p-6 md:p-12 font-sans relative">
       <div className="absolute inset-0 bg-dot-pattern opacity-70 pointer-events-none z-0" />
-      
+
       <div className="max-w-5xl mx-auto relative z-10">
         <header className="flex items-center justify-between mb-12">
-            <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-white border border-slate-200 rounded-2xl flex items-center justify-center shadow-sm">
-                    <Image src={logoImg} alt="Altimetrik" width={32} height={32} className="rounded-lg" />
-                </div>
-                <div>
-                    <h1 className="text-2xl font-black text-slate-900 tracking-tight">System Check</h1>
-                    <p className="text-slate-500 text-sm font-medium">Ready for your assessment, {candidate?.name || 'Candidate'}?</p>
-                </div>
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-white border border-slate-200 rounded-2xl flex items-center justify-center shadow-sm">
+              <Image src={logoImg} alt="Altimetrik" width={32} height={32} className="rounded-lg" />
             </div>
+            <div>
+              <h1 className="text-2xl font-black text-slate-900 tracking-tight">System Check</h1>
+              <p className="text-slate-500 text-sm font-medium">Ready for your assessment, {candidate?.name || 'Candidate'}?</p>
+            </div>
+          </div>
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-          
+
           {/* Details Section */}
           <div className="space-y-8 animate-in slide-in-from-left-4 duration-500">
             <div className="bg-white border border-slate-200 p-8 rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.03)]">
-                <h2 className="text-xl font-bold mb-8 flex items-center gap-3 text-slate-900 border-b border-slate-50 pb-4">
-                <User size={22} className="text-blue-500" /> 
+              <h2 className="text-xl font-bold mb-8 flex items-center gap-3 text-slate-900 border-b border-slate-50 pb-4">
+                <User size={22} className="text-blue-500" />
                 Confirmation
-                </h2>
-                
-                <div className="space-y-6">
+              </h2>
+
+              <div className="space-y-6">
                 <div className="space-y-2">
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Full Name</label>
-                    <input
+                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Full Name</label>
+                  <input
                     type="text"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-slate-800 font-semibold focus:outline-none focus:border-blue-500 transition-all outline-none"
                     placeholder="Enter your full name"
-                    />
+                  />
                 </div>
 
                 <div className="space-y-2">
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Email</label>
-                    <div className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-slate-400 font-medium flex items-center gap-3">
-                        <Mail size={18} />
-                        {candidate?.email}
-                    </div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Email</label>
+                  <div className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-slate-400 font-medium flex items-center gap-3">
+                    <Mail size={18} />
+                    {candidate?.email}
+                  </div>
                 </div>
 
                 <div className="pt-6 border-t border-slate-50">
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest pl-1 mb-2">Test Role</label>
-                    <div className="bg-blue-50 border border-blue-100 rounded-2xl px-5 py-4 flex items-center justify-between">
-                        <span className="text-blue-700 font-bold">{interview?.title || 'General Assessment'}</span>
-                        <div className="px-3 py-1 bg-white rounded-lg text-blue-600 text-[10px] font-black uppercase tracking-widest border border-blue-100">
-                            {interview?.question_bank?.length || 0} Questions
-                        </div>
-                    </div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest pl-1 mb-2">Test Role</label>
+                  <div className="bg-blue-50 border border-blue-100 rounded-2xl px-5 py-4 flex items-center justify-between">
+                    <span className="text-blue-700 font-bold">{interview?.title || 'General Assessment'}</span>
+                  </div>
                 </div>
-                </div>
+              </div>
             </div>
 
             <div className="bg-blue-600 rounded-[2rem] p-8 text-white relative overflow-hidden group shadow-xl">
-                 <div className="relative z-10">
-                    <p className="text-blue-100 font-bold text-xs uppercase tracking-[0.2em] mb-2">Notice</p>
-                    <h3 className="text-xl font-black mb-4 tracking-tight">Assessment Integrity</h3>
-                    <p className="text-blue-50 text-sm leading-relaxed opacity-90">
-                        This session will be recorded. Please ensure you are alone in a quiet room. Your browser must remain in full-screen mode throughout.
-                    </p>
-                 </div>
-                 <div className="absolute -bottom-8 -right-8 opacity-10 group-hover:scale-110 transition-transform">
-                      <ShieldCheck size={160} />
-                 </div>
+              <div className="relative z-10">
+                <p className="text-blue-100 font-bold text-xs uppercase tracking-[0.2em] mb-2">Notice</p>
+                <h3 className="text-xl font-black mb-4 tracking-tight">Assessment Integrity</h3>
+                <p className="text-blue-50 text-sm leading-relaxed opacity-90">
+                  This session will be recorded. Please ensure you are alone in a quiet room. Your browser must remain in full-screen mode throughout.
+                </p>
+              </div>
+              <div className="absolute -bottom-8 -right-8 opacity-10 group-hover:scale-110 transition-transform">
+                <ShieldCheck size={160} />
+              </div>
             </div>
           </div>
 
           {/* System Check Section */}
           <div className="bg-white border border-slate-200 p-8 rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.03)] flex flex-col animate-in slide-in-from-right-4 duration-500">
             <h2 className="text-xl font-bold mb-8 flex items-center gap-3 text-slate-900 border-b border-slate-50 pb-4">
-              <Camera size={22} className="text-blue-500" /> 
+              <Camera size={22} className="text-blue-500" />
               Device Setup
             </h2>
 
@@ -241,7 +238,7 @@ export default function CandidateSetup() {
                   </div>
                   <h3 className="font-bold text-slate-800 mb-2">Hardware Check</h3>
                   <p className="text-slate-500 mb-8 text-sm leading-relaxed">We need to verify your camera and microphone are working correctly.</p>
-                  <button 
+                  <button
                     onClick={runSystemCheck}
                     className="bg-white hover:bg-slate-50 border border-slate-200 px-8 py-3 rounded-xl text-sm font-bold text-slate-800 transition-all shadow-sm active:scale-95"
                   >
@@ -258,23 +255,23 @@ export default function CandidateSetup() {
                       </div>
                     )}
                     {sysCheckStatus === 'passed' && (
-                        <div className="absolute top-4 left-4 inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg">
-                            <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
-                            Live Feed
-                        </div>
+                      <div className="absolute top-4 left-4 inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg">
+                        <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+                        Live Feed
+                      </div>
                     )}
                   </div>
-                  
+
                   <div className="p-6 bg-slate-50 border border-slate-100 rounded-2xl">
                     <div className="flex items-center justify-between mb-3 px-1">
-                        <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest">
-                            <Mic size={16} className={sysCheckStatus === 'passed' ? 'text-emerald-500' : 'text-slate-400'} />
-                            Microphone Active
-                        </div>
-                        {sysCheckStatus === 'passed' && <CheckCircle2 size={16} className="text-emerald-500" />}
+                      <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest">
+                        <Mic size={16} className={sysCheckStatus === 'passed' ? 'text-emerald-500' : 'text-slate-400'} />
+                        Microphone Active
+                      </div>
+                      {sysCheckStatus === 'passed' && <CheckCircle2 size={16} className="text-emerald-500" />}
                     </div>
                     <div className="h-2.5 bg-white rounded-full overflow-hidden shadow-inner border border-slate-100 p-0.5">
-                      <div 
+                      <div
                         className={`h-full rounded-full transition-all duration-75 ${micLevel > 10 ? 'bg-blue-500' : 'bg-slate-200'}`}
                         style={{ width: `${Math.min(100, (micLevel / 128) * 100)}%` }}
                       />
@@ -291,7 +288,7 @@ export default function CandidateSetup() {
                 </div>
               )}
             </div>
-            
+
             <button
               onClick={handleStartInterview}
               disabled={sysCheckStatus !== 'passed'}
