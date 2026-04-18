@@ -677,6 +677,8 @@ export default function InterviewRoom() {
       /\brepeat\b/i, /\bsay that again\b/i, /\brephrase\b/i,
       /\bcan you repeat\b/i, /\bwhat did you say\b/i, /\bpardon\b/i,
       /\bsorry.{0,20}(repeat|again|question)/i, /\bcould you (repeat|say|ask)/i,
+      /\belaborate\b/i, /\bcan you elaborate\b/i, /\bcan you explain\b/i, 
+      /\bcould you elaborate\b/i, /\bcould you explain\b/i, /\bwhat do you mean\b/i,
     ];
     const isRepeatRequest = REPEAT_PATTERNS.some(p => p.test(finalAnswer));
 
