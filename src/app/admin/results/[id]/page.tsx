@@ -6,7 +6,8 @@ import { supabase } from '@/lib/supabase';
 import {
   ArrowLeft, User, Video, FileText, ShieldAlert, Loader2,
   Target, TrendingDown, ShieldCheck, TrendingUp, AlertTriangle,
-  MessageSquareWarning, CheckCircle2, ChevronDown, ChevronUp
+  MessageSquareWarning, CheckCircle2, ChevronDown, ChevronUp,
+  Settings, Cpu, Terminal
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -104,6 +105,8 @@ export default function ResultDetails() {
   const [stitchingStatus, setStitchingStatus] = useState<string | null>(null);
   const [segmentUrls, setSegmentUrls] = useState<string[]>([]);
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
+  const [stitchingProgress, setStitchingProgress] = useState(0);
+  const [stitchingLogs, setStitchingLogs] = useState<string[]>([]);
 
   useEffect(() => {
     if (!params.id) return;
@@ -120,90 +123,162 @@ export default function ResultDetails() {
   }, [params.id]);
 
   useEffect(() => {
-    if (!result?.video_url) return;
+    if (!result?.video_url || !result.video_url.endsWith('/')) return;
 
-    const getPresignedUrl = async () => {
+    let pollInterval: NodeJS.Timeout | null = null;
+    let isMounted = true;
+
+    const startStitchingProcess = async () => {
         setFetchingUrl(true);
         try {
-            // Check if it's a segmented folder prefix (ends with /)
-            if (result.video_url.endsWith('/')) {
-                setStitchingStatus('Searching for video segments...');
+            // 1. Initial Check - See if it's already stitched
+            const listRes = await fetch('/api/upload-video', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'listSegments', fileName: result.candidate_id })
+            });
+            if (!isMounted) return;
+            const listData = await listRes.json();
+            
+            if (listData.finalExists) {
+              console.log('Final video already exists, skipping trigger.');
+              setPresignedUrl(listData.finalUrl);
+              setStitchingStatus(null);
+              // Save that final URL in DB so we never run this check again
+              await supabase.from('results').update({ video_url: listData.finalPublicUrl }).eq('id', result.id);
+              return;
+            }
+
+            if (!listData.segments || listData.segments.length === 0) {
+                setVideoError(true);
+                return;
+            }
+
+            // 2. Trigger Lambda - Only if final video was NOT found
+            setStitchingStatus('Server-side stitching in progress...');
+            const triggerRes = await fetch('/api/trigger-stitch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ candidateId: result.candidate_id })
+            });
+            if (!isMounted) return;
+            
+            if (!triggerRes.ok) throw new Error('Failed to trigger stitching');
+
+            // 3. Start Polling
+            let attempts = 0;
+            const maxAttempts = 50; 
+            let lastLogIndex = 0;
+
+            pollInterval = setInterval(async () => {
+              if (!isMounted) {
+                if (pollInterval) clearInterval(pollInterval);
+                return;
+              }
+              attempts++;
+              
+              try {
+                // Fetch Logs
+                const statusRes = await fetch('/api/upload-video', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ action: 'getStatus', fileName: result.candidate_id })
+                });
+                const statusData = await statusRes.json();
                 
-                const listRes = await fetch('/api/upload-video', {
+                if (statusData.logs) {
+                    setStitchingLogs(statusData.logs);
+                    lastLogIndex = statusData.logs.length;
+                }
+                if (statusData.progress !== undefined) setStitchingProgress(statusData.progress);
+                if (statusData.status) setStitchingStatus(statusData.status.toUpperCase());
+
+                const checkRes = await fetch('/api/upload-video', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ action: 'listSegments', fileName: result.candidate_id })
                 });
-                const { segments } = await listRes.json();
+                const checkData = await checkRes.json();
                 
-                if (!segments || segments.length === 0) {
-                    setVideoError(true);
-                    return;
+                if (checkData.finalExists) {
+                  if (pollInterval) clearInterval(pollInterval);
+                  console.log('%c[SUCCESS] Video ready!', 'color: #10b981; font-weight: bold;');
+                  
+                  // Clear segments to force the player to use the single final URL
+                  setSegmentUrls([]);
+                  setCurrentSegmentIndex(0);
+                  
+                  setPresignedUrl(checkData.finalUrl);
+                  setStitchingStatus(null);
+                  
+                  await supabase.from('results').update({ video_url: checkData.finalPublicUrl }).eq('id', result.id);
+                } else if (attempts >= maxAttempts) {
+                  if (pollInterval) clearInterval(pollInterval);
+                  setStitchingStatus('STITCHING TIMED OUT');
                 }
-
-                setSegmentUrls(segments);
-                setCurrentSegmentIndex(0);
-                setPresignedUrl(segments[0]);
-                
-                // For direct download, we still create a master blob
-                const segmentBlobs = await Promise.all(
-                    segments.map(async (url: string) => {
-                        const res = await fetch(url);
-                        return await res.blob();
-                    })
-                );
-                const masterBlob = new Blob(segmentBlobs, { type: 'video/webm' });
-                
-                // --- NEW: Finalize and Upload single file for future use ---
-                setStitchingStatus('Finalizing video for permanent storage...');
-                
-                const finalFileName = `${result.candidate_id}/final_interview.webm`;
-                const uploadRes = await fetch('/api/upload-video', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'upload', fileName: finalFileName, fileType: 'video/webm' })
-                });
-                const { signedUrl: putUrl, publicUrl } = await uploadRes.json();
-
-                await fetch(putUrl, {
-                    method: 'PUT',
-                    body: masterBlob,
-                    headers: { 'Content-Type': 'video/webm' }
-                });
-
-                // Update database to point to the new single file
-                await supabase
-                    .from('results')
-                    .update({ video_url: publicUrl })
-                    .eq('id', result.id);
-
-                console.log('Video finalized and database updated.');
-                setStitchingStatus(null);
-                
-            } else {
-                // Classic single file logic
-                const url = new URL(result.video_url);
-                const key = decodeURIComponent(url.pathname.replace(/^\//, ''));
-
-                const response = await fetch('/api/s3-presign', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'get', fileName: key })
-                });
-                const data = await response.json();
-                if (data.signedUrl) {
-                    setPresignedUrl(data.signedUrl);
-                }
-            }
+              } catch (e) {
+                console.warn('Polling check failed, retrying...');
+              }
+            }, 5000);
+            
+            // We no longer set segmentUrls here because we want to show the Progress Tracker UI
+            // instead of a broken segmented experience.
+            
         } catch (err) {
-            console.error('Failed to fetch/finalize video:', err);
+            console.error('Failed to manage video:', err);
             setVideoError(true);
         } finally {
-            setFetchingUrl(false);
+            if (isMounted) setFetchingUrl(false);
         }
     };
-    getPresignedUrl();
+
+    startStitchingProcess();
+
+    return () => {
+      isMounted = false;
+      if (pollInterval) clearInterval(pollInterval);
+    };
+  }, [result?.video_url, result?.id]);
+
+  // Separate effect for single-file presigned URLs
+  useEffect(() => {
+    if (!result?.video_url || result.video_url.endsWith('/')) return;
+    
+    const getSingleFileUrl = async () => {
+        try {
+            const url = new URL(result.video_url);
+            const key = decodeURIComponent(url.pathname.replace(/^\//, ''));
+            
+            console.log(`%c[CHECK] Verifying video existence: ${key}`, 'color: #94a3b8;');
+            
+            const res = await fetch('/api/s3-presign', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'get', fileName: key })
+            });
+            const data = await res.json();
+            
+            if (data.signedUrl) {
+                console.log('%c[OK] Video verified. Loading secure stream...', 'color: #10b981;');
+                setPresignedUrl(data.signedUrl);
+                setVideoError(false);
+            } else {
+                // FILE IS MISSING (Self-Healing Mode)
+                console.warn('%c[RECOVERY] Final video missing from S3! Reverting to segmented mode to re-stitch...', 'color: #f59e0b; font-weight: bold;');
+                
+                // Reconstruct folder path
+                const folderPath = `https://${url.hostname}/interview-videos/${result.candidate_id}/`;
+                setVideoError(false);
+                setResult((prev: any) => ({ ...prev, video_url: folderPath }));
+            }
+        } catch (e) {
+            console.error('Failed to get presigned URL:', e);
+            setVideoError(true);
+        }
+    };
+    getSingleFileUrl();
   }, [result?.video_url]);
+
 
   if (loading) return (
     <div className="min-h-screen bg-[#fcfdfd] flex items-center justify-center">
@@ -372,19 +447,19 @@ export default function ResultDetails() {
 
           {/* Video Player Section */}
           <div className="bg-white border border-slate-200 rounded-[3rem] overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.04)]">
-            <div className="p-6 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
+            <div className="p-6 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between relative z-10">
               <h3 className="font-bold text-slate-900 flex items-center gap-2 uppercase tracking-widest text-[11px]">
                 <Video size={16} className="text-blue-500" /> Session Recording
               </h3>
-              {result.video_url && !videoError && (
+              {result.video_url && !videoError && presignedUrl && (
                 <div className="flex items-center gap-2 px-3 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[10px] font-black tracking-widest">
                   <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-                  {presignedUrl ? (result.video_url.endsWith('/') ? 'SEAMLESS SEGMENTED STREAM' : 'SECURE DIRECT STREAM') : (stitchingStatus || 'INITIALIZING...')}
+                  {result.video_url.endsWith('/') ? 'SEAMLESS SEGMENTED STREAM' : 'SECURE DIRECT STREAM'}
                 </div>
               )}
             </div>
 
-            <div className="aspect-video bg-slate-900 relative">
+            <div className="aspect-video bg-slate-900 relative overflow-hidden rounded-b-[3rem]">
               {!result.video_url ? (
                 <div className="absolute inset-0 flex flex-col items-center justify-center p-12 text-center">
                   <div className="w-20 h-20 bg-white/5 rounded-[2rem] flex items-center justify-center mb-6 border border-white/5">
@@ -398,12 +473,66 @@ export default function ResultDetails() {
                   <h4 className="text-white font-bold text-xl mb-4">Stream Playback Failed</h4>
                   <a href={presignedUrl || result.video_url} target="_blank" className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-xl font-bold transition-all shadow-lg active:scale-95">Download Recording</a>
                 </div>
-              ) : !presignedUrl ? (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center p-12 text-center">
-                      <Loader2 className="animate-spin text-blue-500 mb-4" size={32} />
-                      <p className="text-slate-400 text-sm font-bold">{stitchingStatus || 'Generating Secure Access URL...'}</p>
+              ) : stitchingStatus ? (
+                // --- REFINED LIGHT THEME PROGRESS TRACKER ---
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-white border-t border-slate-100">
+                  <div className="absolute inset-0 opacity-40 pointer-events-none">
+                    <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_center,_#f1f5f9_0%,_transparent_70%)]" />
+                  </div>
+                  
+                  <div className="z-10 w-full max-w-xs space-y-5">
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="w-12 h-12 bg-blue-50 border border-blue-100 rounded-2xl flex items-center justify-center shadow-sm">
+                        <Cpu size={24} className="text-blue-500 animate-pulse" />
+                      </div>
+                      <div className="text-center">
+                        <h4 className="text-slate-900 font-black text-sm tracking-widest uppercase">{stitchingStatus || 'Processing...'}</h4>
+                        <p className="text-blue-500/60 text-[9px] font-black uppercase tracking-[0.2em] italic">Optimization Pipeline Active</p>
+                      </div>
                     </div>
-                  ) : (
+
+                    {/* Compact Progress Bar */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-end px-1">
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.15em]">Sync Progress</span>
+                        <span className="text-sm font-black text-blue-600 tabular-nums">{stitchingProgress}%</span>
+                      </div>
+                      <div className="h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200/50 p-[1px]">
+                        <div 
+                          className="h-full bg-gradient-to-r from-blue-500 to-blue-400 rounded-full transition-all duration-1000 ease-out shadow-sm"
+                          style={{ width: `${stitchingProgress}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Light Live Log Window */}
+                    <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-3 h-28 overflow-hidden relative shadow-sm">
+                      <div className="flex flex-col-reverse gap-1.5 overflow-y-auto h-full pr-1 custom-scrollbar">
+                        {stitchingLogs.slice().reverse().map((log, lIdx) => (
+                          <div key={lIdx} className="flex gap-2 items-start animate-in fade-in duration-300">
+                            <Terminal size={8} className="text-slate-400 mt-1 shrink-0" />
+                            <p className="text-[9px] font-mono text-slate-500 font-bold leading-tight uppercase tracking-tight overflow-hidden text-ellipsis whitespace-nowrap">
+                              {log.replace(/\[.*?\]\s*/, '')}
+                            </p>
+                          </div>
+                        ))}
+                        {stitchingLogs.length === 0 && (
+                          <p className="text-[9px] font-mono text-slate-400 text-center mt-6 italic">Connecting...</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <p className="text-[8px] text-center text-slate-400 font-black uppercase tracking-widest opacity-60">
+                      Processing High-Fidelity Audio Sync...
+                    </p>
+                  </div>
+                </div>
+              ) : !presignedUrl ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center p-12 text-center">
+                  <Loader2 className="animate-spin text-blue-500 mb-4" size={32} />
+                  <p className="text-slate-400 text-sm font-bold">Generating Secure Access URL...</p>
+                </div>
+              ) : (
                 <div className="relative w-full h-full group">
                   <video
                     src={segmentUrls.length > 0 ? segmentUrls[currentSegmentIndex] : presignedUrl}
@@ -418,11 +547,6 @@ export default function ResultDetails() {
                     }}
                     onError={() => setVideoError(true)}
                   />
-                  {segmentUrls.length > 1 && (
-                    <div className="absolute top-4 right-4 px-3 py-1.5 bg-black/60 backdrop-blur-md rounded-lg text-[10px] font-black text-white/90 uppercase tracking-widest border border-white/10 pointer-events-none transition-opacity group-hover:opacity-100 opacity-0">
-                      Clip {currentSegmentIndex + 1} of {segmentUrls.length}
-                    </div>
-                  )}
                 </div>
               )}
             </div>

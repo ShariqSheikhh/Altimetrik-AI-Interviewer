@@ -68,6 +68,7 @@ export default function InterviewRoom() {
   const isResumingRef = useRef(false);
   const uploadQueueRef = useRef<{ blob: Blob; fileName: string; index: number }[]>([]);
   const isProcessingQueueRef = useRef(false);
+  const sessionCountRef = useRef(1);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -245,15 +246,21 @@ export default function InterviewRoom() {
         if (state.questionsWithFollowUps) questionsWithFollowUps.current = state.questionsWithFollowUps;
         if (state.followUpCountForCurrentQ) followUpCountForCurrentQ.current = state.followUpCountForCurrentQ;
         
-        // Restore Segment Count for ordering from state (more reliable than part list)
-        if (state.segmentIndex !== undefined) {
-          segmentIndexRef.current = state.segmentIndex + 1;
-        } else if (cData.s3_uploaded_parts) {
-          segmentIndexRef.current = cData.s3_uploaded_parts.length + 1;
-        }
+        // NEW: Increment Session Count on Resume
+        const prevSessionCount = state.sessionCount || 1;
+        sessionCountRef.current = prevSessionCount + 1;
+        
+        // Reset segment index for the new session
+        segmentIndexRef.current = 1;
+        
+        // Save the new session count immediately to the existing state
+        const newState = { ...state, sessionCount: sessionCountRef.current, segmentIndex: 1 };
+        await supabase.from('candidates').update({
+          session_state: newState,
+        }).eq('id', cid);
         
         isResumingRef.current = true;
-        sendLogToCmd('INFO', 'Interview state restored from DB.');
+        sendLogToCmd('INFO', `Interview state restored. Starting Session: ${sessionCountRef.current}`);
       }
 
       try {
@@ -464,6 +471,7 @@ export default function InterviewRoom() {
       questionsWithFollowUps: questionsWithFollowUps.current,
       followUpCountForCurrentQ: followUpCountForCurrentQ.current,
       segmentIndex: segmentIndexRef.current,
+      sessionCount: sessionCountRef.current,
     };
 
     try {
@@ -746,16 +754,23 @@ export default function InterviewRoom() {
           });
           const { signedUrl } = await res.json();
           
-          await fetch(signedUrl, {
-            method: 'PUT',
-            body: blob,
-          });
+        await fetch(signedUrl, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'video/webm',
+          },
+          body: blob,
+        });
 
           // Track segment in DB in the background
-          const { data: cData } = await supabase.from('candidates').select('s3_uploaded_parts').eq('id', candidate.id).single();
+          const { data: cData } = await supabase.from('candidates').select('s3_uploaded_parts, session_state').eq('id', candidate.id).single();
           const existing = cData?.s3_uploaded_parts || [];
+          const currentState = cData?.session_state || {};
+          
           await supabase.from('candidates').update({ 
-            s3_uploaded_parts: [...existing, { segment: fileName }] 
+            s3_uploaded_parts: [...existing, { segment: fileName }],
+            // Immediate update of session state index for robustness
+            session_state: { ...currentState, segmentIndex: index, sessionCount: sessionCountRef.current }
           }).eq('id', candidate.id);
 
         } catch (err) {
@@ -779,18 +794,20 @@ export default function InterviewRoom() {
     enterFullscreen();
     
     if (stream) {
-      mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'video/webm' });
-      mediaRecorderRef.current.ondataavailable = (e) => {
+      const mr = new MediaRecorder(stream, { mimeType: 'video/webm' });
+      mr.ondataavailable = (e: any) => {
         if (e.data.size > 0) {
           const blob = e.data;
           const currentIdx = segmentIndexRef.current++;
-          const segmentFileName = `${candidate.id}/segment_${String(currentIdx).padStart(4, '0')}.webm`;
+          const sessionPrefix = `S${String(sessionCountRef.current).padStart(2, '0')}`;
+          const segmentFileName = `${candidate.id}/${sessionPrefix}_seg_${String(currentIdx).padStart(4, '0')}.webm`;
           
           uploadQueueRef.current.push({ blob, fileName: segmentFileName, index: currentIdx });
           processUploadQueue();
         }
       };
-      mediaRecorderRef.current.start(5000); // 5 second segments
+      mr.start(5000); // 5 second continuous fragments (produces only one header in first chunk)
+      mediaRecorderRef.current = mr;
     }
 
     if (isResumingRef.current) {
@@ -814,6 +831,7 @@ export default function InterviewRoom() {
   };
 
   const handleEndInterview = async () => {
+    isInterviewActive.current = false;
     setSavingStatus('Finalizing your interview and saving signals...');
     try { recognitionRef.current?.stop(); } catch (e) { }
     

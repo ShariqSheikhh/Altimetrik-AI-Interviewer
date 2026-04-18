@@ -9,10 +9,14 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@aws-crypto/sha256-js": "^5.2.0",
     "@aws-sdk/client-bedrock-runtime": "^3.1024.0",
+    "@aws-sdk/client-lambda": "^3.1032.0",
     "@aws-sdk/client-s3": "^3.1028.0",
+    "@aws-sdk/protocol-http": "^3.370.0",
     "@aws-sdk/s3-presigned-post": "^3.1028.0",
     "@aws-sdk/s3-request-presigner": "^3.1028.0",
+    "@aws-sdk/signature-v4": "^3.370.0",
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
     "@google/genai": "^1.46.0",

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 const s3Config: any = {
@@ -38,13 +38,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ signedUrl, fileName });
       
     } else if (action === 'get') {
-      const command = new GetObjectCommand({
-        Bucket: bucketName,
-        Key: fileName,
-      });
-      // URL expires in 1 hour
-      const signedUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
-      return NextResponse.json({ signedUrl });
+      try {
+        // Verify the file actually exists before giving out a URL
+        const headCommand = new HeadObjectCommand({
+          Bucket: bucketName,
+          Key: fileName,
+        });
+        await s3Client.send(headCommand);
+
+        const command = new GetObjectCommand({
+          Bucket: bucketName,
+          Key: fileName,
+        });
+        const signedUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+        return NextResponse.json({ signedUrl });
+      } catch (headErr: any) {
+        if (headErr.name === 'NotFound' || headErr.$metadata?.httpStatusCode === 404) {
+          return NextResponse.json({ error: 'File not found', exists: false }, { status: 404 });
+        }
+        throw headErr;
+      }
       
     } else {
       return NextResponse.json({ error: 'Invalid action' }, { status: 400 });

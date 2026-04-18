@@ -39,6 +39,7 @@ export async function POST(req: NextRequest) {
     const key = `interview-videos/${fileName}`;
 
     if (action === 'upload') {
+      console.log(`[S3-UPLOAD] Generating presigned URL. Bucket: ${bucketName}, Key: ${key}`);
       const command = new PutObjectCommand({
         Bucket: bucketName,
         Key: key,
@@ -113,11 +114,14 @@ export async function POST(req: NextRequest) {
       const contents = response.Contents || [];
       const allKeys = contents
         .map(item => item.Key)
-        .filter((key): key is string => !!key && key.endsWith('.webm'));
+        .filter((key): key is string => !!key && (key.endsWith('.webm') || key.endsWith('.mp4')));
 
-      const finalKey = allKeys.find(key => key.endsWith('final_interview.webm'));
+      // Priority: check for the newly implemented MP4 final video first
+      const finalKey = allKeys.find(key => key.endsWith('final_interview.mp4')) || 
+                      allKeys.find(key => key.endsWith('final_interview.webm'));
+
       const segmentKeys = allKeys
-        .filter(key => !key.endsWith('final_interview.webm'))
+        .filter(key => key.endsWith('.webm') && !key.endsWith('final_interview.webm'))
         .sort((a, b) => a.localeCompare(b));
 
       let finalUrl = null;
@@ -140,13 +144,28 @@ export async function POST(req: NextRequest) {
         })
       );
 
-      return NextResponse.json({ 
+        return NextResponse.json({ 
         success: true, 
         segments: segmentUrls,
         finalExists: !!finalKey,
         finalUrl,
         finalPublicUrl 
       });
+
+    } else if (action === 'getStatus') {
+      const statusKey = `interview-videos/${fileName}/stitching_status.json`;
+      try {
+        const command = new GetObjectCommand({
+          Bucket: bucketName,
+          Key: statusKey,
+        });
+        const response = await s3Client.send(command);
+        const bodyContents = await response.Body?.transformToString();
+        return NextResponse.json(JSON.parse(bodyContents || '{}'));
+      } catch (err) {
+        // If file doesn't exist yet, return a simple waiting status
+        return NextResponse.json({ status: 'Waiting for Lambda...', logs: [] });
+      }
 
     } else {
       return NextResponse.json({ error: 'Invalid action' }, { status: 400 });

@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { ArrowLeft, CheckCircle, Clock, XCircle, Users, Mail, BarChart3, Loader2, RefreshCw, GraduationCap, ArrowRight } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Clock, XCircle, Users, Mail, BarChart3, Loader2, RefreshCw, GraduationCap, ArrowRight, Filter, Download } from 'lucide-react';
+import * as ExcelJS from 'exceljs';
 import Link from 'next/link';
 
 type CandidateStatus = 'completed' | 'in_progress' | 'not_started';
@@ -27,6 +28,7 @@ export default function InterviewStatusPage() {
   const [candidates, setCandidates] = useState<CandidateWithStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [filterStatus, setFilterStatus] = useState('all');
 
   const fetchStatus = async () => {
     try {
@@ -89,6 +91,73 @@ export default function InterviewStatusPage() {
     total: candidates.length,
     completed: candidates.filter((c) => c.status === 'completed').length,
     not_started: candidates.filter((c) => c.status === 'not_started').length,
+  };
+
+  const filteredCandidates = candidates.filter((candidate) => {
+    if (filterStatus === 'all') return true;
+    
+    const score = candidate.result?.evaluation?.score;
+    const hasResult = score !== undefined && score !== null;
+
+    if (filterStatus === 'accept') return hasResult && score > 80;
+    if (filterStatus === 'reject') return hasResult && score < 50;
+    if (filterStatus === 'human_eval') return hasResult && score >= 50 && score <= 80;
+    if (filterStatus === 'no_result') return !hasResult;
+    
+    return true;
+  });
+
+  const handleExportExcel = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Enrollment Results');
+
+    worksheet.columns = [
+        { header: 'Candidate ID', key: 'id', width: 36 },
+        { header: 'Name', key: 'name', width: 25 },
+        { header: 'Email ID', key: 'email', width: 30 },
+        { header: 'Passkey', key: 'passkey', width: 15 },
+        { header: 'Score Obtained', key: 'score', width: 15 },
+        { header: 'Evaluation Result', key: 'evaluation', width: 20 },
+        { header: 'Results Page', key: 'link', width: 70 }
+    ];
+
+    filteredCandidates.forEach(candidate => {
+        const score = candidate.result?.evaluation?.score;
+        const evaluation = (score !== undefined && score !== null)
+            ? (score > 80 ? 'Accept' : score < 50 ? 'Reject' : 'Human Eval')
+            : 'No Result Yet';
+        
+        const link = candidate.result?.id 
+            ? `${window.location.origin}/admin/results/${candidate.result.id}`
+            : 'N/A';
+
+        worksheet.addRow({
+            id: candidate.id,
+            name: candidate.name || 'Anonymous',
+            email: candidate.email,
+            passkey: candidate.passkey,
+            score: score !== undefined && score !== null ? `${score}%` : 'N/A',
+            evaluation: evaluation,
+            link: link
+        });
+    });
+
+    // Styling
+    worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    worksheet.getRow(1).fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF1E293B' } // Slate-800
+    };
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${interview?.title || 'Interview'}_Candidates_Report.xlsx`;
+    a.click();
+    window.URL.revokeObjectURL(url);
   };
 
   const completedPercentage = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
@@ -154,11 +223,35 @@ export default function InterviewStatusPage() {
 
       {/* Table Section */}
       <div className="bg-white border border-slate-200 rounded-[2.5rem] overflow-hidden shadow-sm">
-          <div className="p-8 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+          <div className="p-8 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
                   <span className="w-2 h-2 bg-blue-500 rounded-full" />
                   Live Enrollment List
               </h2>
+              
+              <div className="flex items-center gap-3">
+                  <button
+                      onClick={handleExportExcel}
+                      className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl shadow-lg shadow-emerald-600/20 transition-all active:scale-95 text-[11px] font-black uppercase tracking-wider"
+                  >
+                      <Download size={14} />
+                      Export Excel
+                  </button>
+                  <div className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-2xl shadow-sm hover:border-blue-200 transition-colors">
+                      <Filter size={14} className="text-slate-400" />
+                      <select 
+                          value={filterStatus}
+                          onChange={(e) => setFilterStatus(e.target.value)}
+                          className="text-[11px] font-black uppercase tracking-wider text-slate-600 bg-transparent border-none outline-none focus:ring-0 cursor-pointer"
+                      >
+                          <option value="all">Default / All</option>
+                          <option value="accept">Pass / Accept</option>
+                          <option value="reject">Reject</option>
+                          <option value="human_eval">Human Eval</option>
+                          <option value="no_result">No Result Yet</option>
+                      </select>
+                  </div>
+              </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -173,7 +266,22 @@ export default function InterviewStatusPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50 bg-white">
-                {candidates.map((candidate) => (
+                {filteredCandidates.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-8 py-20 text-center">
+                        <div className="flex flex-col items-center justify-center text-slate-400">
+                             <Filter size={32} className="mb-4 opacity-20" />
+                             <p className="text-sm font-bold">No candidates match this filter.</p>
+                             <button 
+                                onClick={() => setFilterStatus('all')}
+                                className="mt-2 text-blue-500 text-xs font-black uppercase tracking-widest hover:underline"
+                             >
+                                Clear Filter
+                             </button>
+                        </div>
+                    </td>
+                  </tr>
+                ) : filteredCandidates.map((candidate) => (
                   <tr key={candidate.id} className="group hover:bg-slate-50/50 transition-colors">
                     <td className="px-8 py-5">
                       {candidate.status === 'completed' ? (
