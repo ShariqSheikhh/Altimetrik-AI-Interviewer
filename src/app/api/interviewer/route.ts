@@ -121,7 +121,7 @@ export async function POST(req: Request) {
   console.log(`\n================= [INTERVIEWER API: START] =================`);
   try {
     const body = await req.json();
-    const { action, questionBank, transcript, followUpInstruction, nextQuestionText, repeatQuestionText, candidateName, isResume, isIntroPhase } = body;
+    const { action, questionBank, transcript, followUpInstruction, nextQuestionText, repeatQuestionText, candidateName, isResume, isIntroPhase, currentQuestionIndex } = body;
     console.log(`[Interviewer] Received Action: ${action}`);
     console.log(`[Interviewer] Follow-Up Instruction? ${!!followUpInstruction}`);
     console.log(`[Interviewer] Question Bank Size: ${questionBank?.length || 0}`);
@@ -130,6 +130,7 @@ export async function POST(req: Request) {
     console.log(`[Interviewer] Next Question Provided: ${!!nextQuestionText}`);
     console.log(`[Interviewer] Repeat Question Requested: ${!!repeatQuestionText}`);
     console.log(`[Interviewer] Is Resume: ${!!isResume}`);
+    console.log(`[Interviewer] Current Question Index: ${currentQuestionIndex ?? 'N/A'}`);
 
     // ── Input validation ──────────────────────────────────────────
     if (!action || typeof action !== 'string') {
@@ -172,6 +173,8 @@ Re-identify your position and resume naturally.`;
         systemInstruction += `\n\n[PRIORITY INSTRUCTION: FOLLOW-UP]\nThe evaluator has determined the candidate's last answer was incomplete. You MUST ask this follow-up question naturally and conversationally:\n"${followUpInstruction}"\nDo NOT move to the next main question yet.`;
       } else if (isIntroPhase) {
         systemInstruction += `\n\n[PRIORITY INSTRUCTION: INTRO PHASE]\nYou are currently in the initial greeting/intro phase. You MUST either greet the candidate and ask if they are ready OR ask them to introduce themselves. ABSOLUTELY DO NOT ask any technical questions from the question bank.`;
+      } else if (typeof currentQuestionIndex === 'number' && currentQuestionIndex >= 0 && currentQuestionIndex < questionBank.length) {
+        systemInstruction += `\n\n[STATE ANCHOR]\nThe candidate has just finished answering Question ${currentQuestionIndex + 1} of ${questionBank.length}. The STRICT next sequential question you MUST ask is Question ${currentQuestionIndex + 2}. Do NOT skip it and NEVER set "is_completed" to true until ALL questions are asked.`;
       }
       // Fully LLM-driven flow handles sequence based on chatHistory and questionsBlock.
 

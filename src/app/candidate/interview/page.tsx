@@ -494,6 +494,7 @@ export default function InterviewRoom() {
           transcript: currentTranscript,
           candidateName: candidate?.name,
           isIntroPhase: questionIndex.current < 0,
+          currentQuestionIndex: questionIndex.current,
           ...(followUpInstruction ? { followUpInstruction } : {}),
           ...(expectedNextQuestion ? { nextQuestionText: expectedNextQuestion } : {}),
           ...(repeatQuestionText ? { repeatQuestionText } : {}),
@@ -543,7 +544,10 @@ export default function InterviewRoom() {
     // The AI scans the transcript and selects the next question itself.
     const data = await askInterviewer(currentTranscript, undefined, undefined, undefined, isResume);
 
-    if (data.isCompleted) {
+    const bankLength = interview?.question_bank?.length || 0;
+    const isActuallyComplete = data.isCompleted && (questionIndex.current >= bankLength - 1);
+
+    if (isActuallyComplete) {
       setIsCompleted(true);
       const cleanedResponse = sanitizeAIOutput(data.response);
       const finalMsg = { speaker: 'AI' as 'AI', text: cleanedResponse };
@@ -552,6 +556,17 @@ export default function InterviewRoom() {
       await speak(cleanedResponse);
       await handleEndInterview();
       return;
+    } else if (data.isCompleted) {
+      // The LLM hallucinated an early end. We override it.
+      sendLogToCmd('WARN', '[Interviewer] Hallucinated early completion detected and intercepted.');
+      data.isCompleted = false;
+      if (questionIndex.current < bankLength - 1) {
+        const nextQIndex = questionIndex.current + 1;
+        const nextQ = interview.question_bank[nextQIndex];
+        const nextQText = typeof nextQ === 'string' ? nextQ : nextQ?.question;
+        data.response = `Great, let's move on. ${nextQText}`;
+        data.currentQuestionIndex = nextQIndex + 1;
+      }
     }
 
     // Only update the local index if a technical question was actually asked (LLM returns a non-null index)
