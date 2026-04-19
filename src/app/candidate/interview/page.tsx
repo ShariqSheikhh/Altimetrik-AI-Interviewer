@@ -431,7 +431,8 @@ export default function InterviewRoom() {
     question: string,
     answer: string,
     keyPoints: string[],
-    followUpAnswer?: string
+    followUpAnswer?: string,
+    allQuestions?: string[]
   ) => {
     try {
       const res = await fetch('/api/live-evaluate', {
@@ -442,6 +443,7 @@ export default function InterviewRoom() {
           candidateAnswer: answer,
           keyPoints,
           ...(followUpAnswer ? { followUpAnswer } : {}),
+          ...(allQuestions ? { allQuestions } : {}),
         }),
       });
       return await res.json();
@@ -700,11 +702,14 @@ export default function InterviewRoom() {
       const lastEntry = candidateAnswers.current[candidateAnswers.current.length - 1];
       const originalQuestion = interview.question_bank[questionIndex.current]?.question || lastEntry.q;
 
+      const allQuestions = interview.question_bank.map((q: any) => typeof q === 'string' ? q : q.question || '');
+
       const liveResult = await callLiveEvaluator(
         originalQuestion,
         lastEntry.a || '',
         keyPoints,
-        followUpCountForCurrentQ.current > 0 ? finalAnswer : undefined
+        followUpCountForCurrentQ.current > 0 ? finalAnswer : undefined,
+        allQuestions
       );
 
       sendLogToCmd('INFO', '[Evaluator 1] Decision Details', { decision: liveResult.decision, coverage: liveResult.coverage_percentage });
@@ -842,11 +847,14 @@ export default function InterviewRoom() {
           const lastEntry = [...candidateAnswers.current].reverse().find((e:any) => !e.isBreak && e.q);
           const originalQuestion = interview?.question_bank[questionIndex.current]?.question || (lastEntry ? lastEntry.q : '');
 
+          const allQuestions = interview?.question_bank?.map((q: any) => typeof q === 'string' ? q : q.question || '') || [];
+
           const liveResult = await callLiveEvaluator(
             originalQuestion,
             lastEntry?.a || '',
             keyPoints,
-            followUpCountForCurrentQ.current > 0 ? finalAnswer : undefined
+            followUpCountForCurrentQ.current > 0 ? finalAnswer : undefined,
+            allQuestions
           );
 
           sendLogToCmd('INFO', '[Evaluator 1 - Resume] Decision', { decision: liveResult.decision });
