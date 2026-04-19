@@ -968,9 +968,21 @@ export default function InterviewRoom() {
         video_url: finalVideoUrl
       }]);
 
+      setSavingStatus('Finalizing your video recording...');
+      // 6. Trigger Video Stitching Pipeline on candidate side
+      try {
+        await fetch('/api/trigger-stitch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ candidateId: candidate.id })
+        });
+      } catch (err) {
+        sendLogToCmd('ERROR', 'Failed to trigger video stitch', { error: String(err) });
+      }
+
       setSavingStatus('Interview completed successfully.');
       
-      // 6. Cleanup candidate record
+      // 7. Cleanup candidate record
       await supabase.from('candidates').update({
         session_state: {},
         s3_uploaded_parts: []

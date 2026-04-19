@@ -154,16 +154,26 @@ export default function ResultDetails() {
                 return;
             }
 
-            // 2. Trigger Lambda - Only if final video was NOT found
-            setStitchingStatus('Server-side stitching in progress...');
-            const triggerRes = await fetch('/api/trigger-stitch', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ candidateId: result.candidate_id })
-            });
-            if (!isMounted) return;
+            // 2. We now rely on the candidate flow to trigger stitching.
+            // But as a fallback, if the lambda status is missing, we trigger it again.
+            setStitchingStatus('Checking server-side stitching progress...');
             
-            if (!triggerRes.ok) throw new Error('Failed to trigger stitching');
+            const initialStatusRes = await fetch('/api/upload-video', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ action: 'getStatus', fileName: result.candidate_id })
+            });
+            const initialStatusData = await initialStatusRes.json();
+            
+            if (initialStatusData.status === 'Waiting for Lambda...') {
+                console.log('%c[FALLBACK] No active stitching found, triggering Lambda...', 'color: #f59e0b; font-weight: bold;');
+                setStitchingStatus('Triggering fallback stitching...');
+                await fetch('/api/trigger-stitch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ candidateId: result.candidate_id })
+                });
+            }
 
             // 3. Start Polling
             let attempts = 0;
