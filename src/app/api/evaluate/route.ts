@@ -50,7 +50,13 @@ function calculateQuestionScore(
   const coverage_weighted = (clamp(coveragePercentage, 0, 100) / 100) * 40;
 
   // Follow-up Score: Starts at 10, deducts 5 per follow-up needed
-  const follow_up_score = clamp(10 - (followUpCount * 5), 0, 10);
+  let follow_up_score = clamp(10 - (followUpCount * 5), 0, 10);
+
+  // Edge case: Candidate gave a completely wrong/vague answer or skipped (coverage is 0)
+  // Since we move to the next question without any follow-ups, they shouldn't get 10 points for requiring zero follow-ups.
+  if (coveragePercentage === 0 && followUpCount === 0) {
+    follow_up_score = 0;
+  }
 
   const final_score = Math.round(Math.max(0, rubric_weighted + coverage_weighted + follow_up_score));
 
