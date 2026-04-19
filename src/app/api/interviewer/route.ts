@@ -170,11 +170,20 @@ Re-identify your position and resume naturally.`;
       if (repeatQuestionText) {
         systemInstruction += `\n\n[PRIORITY INSTRUCTION: REPEAT QUESTION]\nThe candidate has asked you to repeat or rephrase the question. You MUST re-ask the following question naturally — do NOT just read it verbatim, rephrase it conversationally. Do NOT move to the next question:\n"${repeatQuestionText}"`;
       } else if (followUpInstruction) {
-        systemInstruction += `\n\n[PRIORITY INSTRUCTION: FOLLOW-UP]\nThe evaluator has determined the candidate's last answer was incomplete. You MUST ask this follow-up question naturally and conversationally:\n"${followUpInstruction}"\nDo NOT move to the next main question yet.`;
+        systemInstruction += `\n\n[PRIORITY INSTRUCTION: FOLLOW-UP]\nThe evaluator has generated a follow-up question. You MUST act ONLY as a text-to-speech friendly paraphraser for this follow-up. Do NOT analyze if you have asked it before. Do NOT look for answers in the transcript. You MUST ask EXACTLY the meaning of this follow-up question:\n"${followUpInstruction}"\n\nUNDER NO CIRCUMSTANCES should you ask a different question, reference old questions, or move to the next question.`;
       } else if (isIntroPhase) {
         systemInstruction += `\n\n[PRIORITY INSTRUCTION: INTRO PHASE]\nYou are currently in the initial greeting/intro phase. You MUST either greet the candidate and ask if they are ready OR ask them to introduce themselves. ABSOLUTELY DO NOT ask any technical questions from the question bank.`;
-      } else if (typeof currentQuestionIndex === 'number' && currentQuestionIndex >= 0 && currentQuestionIndex < questionBank.length) {
-        systemInstruction += `\n\n[STATE ANCHOR]\nThe candidate has just finished answering Question ${currentQuestionIndex + 1} of ${questionBank.length}. The STRICT next sequential question you MUST ask is Question ${currentQuestionIndex + 2}. Do NOT skip it and NEVER set "is_completed" to true until ALL questions are asked.`;
+      }
+
+      // Independent State Anchor to prevent timeline hallucination
+      if (typeof currentQuestionIndex === 'number' && currentQuestionIndex >= 0) {
+        if (followUpInstruction || repeatQuestionText) {
+          systemInstruction += `\n\n[STATE ANCHOR]\nThe candidate is currently answering Question ${currentQuestionIndex + 1} of ${questionBank.length}. You are currently executing a Priority Instruction for this question. Do NOT move to the next question and NEVER set "is_completed" to true.`;
+        } else if (currentQuestionIndex >= questionBank.length - 1) {
+          systemInstruction += `\n\n[STATE ANCHOR]\nThe candidate has just finished answering the FINAL question (${questionBank.length} of ${questionBank.length}). You MUST now conclude the interview. Thank the candidate and set "is_completed" to true in your JSON. Do NOT ask any more questions.`;
+        } else {
+          systemInstruction += `\n\n[STATE ANCHOR]\nThe candidate has just finished answering Question ${currentQuestionIndex + 1} of ${questionBank.length}. The STRICT next sequential question you MUST ask is Question ${currentQuestionIndex + 2}. Do NOT skip it and NEVER set "is_completed" to true until ALL questions are asked.`;
+        }
       }
       // Fully LLM-driven flow handles sequence based on chatHistory and questionsBlock.
 
