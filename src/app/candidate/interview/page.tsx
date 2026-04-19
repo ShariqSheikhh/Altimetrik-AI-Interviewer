@@ -12,7 +12,7 @@ const sendLogToCmd = (level: string, message: string, details?: any) => {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ level, message, details }),
-  }).catch(() => {});
+  }).catch(() => { });
 };
 
 export default function InterviewRoom() {
@@ -61,7 +61,7 @@ export default function InterviewRoom() {
   const followUpCountForCurrentQ = useRef(0);  // how many follow-ups asked for current question
   const lastQuestionText = useRef('');
   const emptyAudioAttempts = useRef(0);
-  
+
   // ── S3 Segmented Storage State ─────────────────────────────────────
   const segmentIndexRef = useRef(1);
   const pendingUploadsRef = useRef<Set<Promise<any>>>(new Set());
@@ -245,13 +245,13 @@ export default function InterviewRoom() {
         if (state.coveragePerQuestion) coveragePerQuestion.current = state.coveragePerQuestion;
         if (state.questionsWithFollowUps) questionsWithFollowUps.current = state.questionsWithFollowUps;
         if (state.followUpCountForCurrentQ) followUpCountForCurrentQ.current = state.followUpCountForCurrentQ;
-        
+
         // NEW: Load Session Count on Resume (don't increment yet)
         sessionCountRef.current = state.sessionCount || 1;
-        
+
         // Reset segment index for the new session
         segmentIndexRef.current = 1;
-        
+
         isResumingRef.current = true;
         sendLogToCmd('INFO', `Interview state restored. Pending Resume from Session: ${sessionCountRef.current}`);
       }
@@ -431,8 +431,10 @@ export default function InterviewRoom() {
     question: string,
     answer: string,
     keyPoints: string[],
-    followUpAnswer?: string,
-    allQuestions?: string[]
+    followUpsHistory: { q: string, a: string }[],
+    allQuestions?: string[],
+    maxFollowUps?: number,
+    currentFollowUpCount?: number
   ) => {
     try {
       const res = await fetch('/api/live-evaluate', {
@@ -442,8 +444,10 @@ export default function InterviewRoom() {
           question,
           candidateAnswer: answer,
           keyPoints,
-          ...(followUpAnswer ? { followUpAnswer } : {}),
+          followUpsHistory,
           ...(allQuestions ? { allQuestions } : {}),
+          maxFollowUps,
+          currentFollowUpCount
         }),
       });
       return await res.json();
@@ -452,7 +456,7 @@ export default function InterviewRoom() {
       return { decision: 'move_next', covered_points: [], missed_points: keyPoints, coverage_percentage: 0 };
     }
   };
-  
+
   // ── State Persistence Logic ──
   const saveInterviewState = async () => {
     const cid = localStorage.getItem('candidate_id');
@@ -490,10 +494,11 @@ export default function InterviewRoom() {
           transcript: currentTranscript,
           candidateName: candidate?.name,
           isIntroPhase: questionIndex.current < 0,
+          currentQuestionIndex: questionIndex.current,
           ...(followUpInstruction ? { followUpInstruction } : {}),
           ...(expectedNextQuestion ? { nextQuestionText: expectedNextQuestion } : {}),
           ...(repeatQuestionText ? { repeatQuestionText } : {}),
-          isResume: currentTranscript.length > 0 && !!expectedNextQuestion === false && !!followUpInstruction === false && !!repeatQuestionText === false && isResumeFlag,
+          isResume: isResumeFlag === true,
         }),
       });
 
@@ -518,14 +523,14 @@ export default function InterviewRoom() {
       const bank = interview?.question_bank || [];
       if (nextQIndex < bank.length) {
         const fallbackQuestion = typeof bank[nextQIndex] === 'string' ? bank[nextQIndex] : bank[nextQIndex].question;
-        return { 
-          response: `I apologize, there was a connection issue. Let's continue. ${fallbackQuestion}`, 
+        return {
+          response: `I apologize, there was a connection issue. Let's continue. ${fallbackQuestion}`,
           isCompleted: false,
           currentQuestionIndex: nextQIndex + 1
         };
       } else {
-        return { 
-          response: 'I apologize, there was a connection issue. We have finished all questions. Thank you for your time!', 
+        return {
+          response: 'I apologize, there was a connection issue. We have finished all questions. Thank you for your time!',
           isCompleted: true,
           currentQuestionIndex: nextQIndex + 1
         };
@@ -539,7 +544,10 @@ export default function InterviewRoom() {
     // The AI scans the transcript and selects the next question itself.
     const data = await askInterviewer(currentTranscript, undefined, undefined, undefined, isResume);
 
-    if (data.isCompleted) {
+    const bankLength = interview?.question_bank?.length || 0;
+    const isActuallyComplete = data.isCompleted && (questionIndex.current >= bankLength - 1);
+
+    if (isActuallyComplete) {
       setIsCompleted(true);
       const cleanedResponse = sanitizeAIOutput(data.response);
       const finalMsg = { speaker: 'AI' as 'AI', text: cleanedResponse };
@@ -548,16 +556,26 @@ export default function InterviewRoom() {
       await speak(cleanedResponse);
       await handleEndInterview();
       return;
+    } else if (data.isCompleted) {
+      // The LLM hallucinated an early end. We override it.
+      sendLogToCmd('WARN', '[Interviewer] Hallucinated early completion detected and intercepted.');
+      data.isCompleted = false;
+      if (questionIndex.current < bankLength - 1) {
+        const nextQIndex = questionIndex.current + 1;
+        const nextQ = interview.question_bank[nextQIndex];
+        const nextQText = typeof nextQ === 'string' ? nextQ : nextQ?.question;
+        data.response = `Great, let's move on. ${nextQText}`;
+        data.currentQuestionIndex = nextQIndex + 1;
+      }
     }
 
-    // Only update the local index if a technical question was actually asked (LLM returns a non-null index)
-    if (data.currentQuestionIndex !== null && data.currentQuestionIndex !== undefined) {
-      questionIndex.current = data.currentQuestionIndex - 1; // Convert 1-based to 0-based
-    } else if (questionIndex.current < 0) {
-       // We are still in Readiness/Intro phase
-    } else {
-       // Normal progression for technical questions if LLM forgets to return index
-       questionIndex.current = questionIndex.current + 1;
+    // Trust the LLM's currentQuestionIndex to avoid drift
+    // The LLM tracks which question it's asking based on transcript history
+    if (data.currentQuestionIndex !== null && data.currentQuestionIndex !== undefined && data.currentQuestionIndex > 0) {
+      questionIndex.current = data.currentQuestionIndex - 1;
+    } else if (!isResume && questionIndex.current >= 0) {
+      // Fallback: only increment if LLM didn't provide an index AND we're not resuming
+      questionIndex.current = questionIndex.current + 1;
     }
 
     const cleanedResponse = sanitizeAIOutput(data.response);
@@ -634,7 +652,7 @@ export default function InterviewRoom() {
     }
 
     const finalAnswerText = currentAnswer.trim();
-    
+
     if (!finalAnswerText) {
       if (emptyAudioAttempts.current < 2) {
         emptyAudioAttempts.current += 1;
@@ -679,7 +697,7 @@ export default function InterviewRoom() {
       /\brepeat\b/i, /\bsay that again\b/i, /\brephrase\b/i,
       /\bcan you repeat\b/i, /\bwhat did you say\b/i, /\bpardon\b/i,
       /\bsorry.{0,20}(repeat|again|question)/i, /\bcould you (repeat|say|ask)/i,
-      /\belaborate\b/i, /\bcan you elaborate\b/i, /\bcan you explain\b/i, 
+      /\belaborate\b/i, /\bcan you elaborate\b/i, /\bcan you explain\b/i,
       /\bcould you elaborate\b/i, /\bcould you explain\b/i, /\bwhat do you mean\b/i,
     ];
     const isRepeatRequest = REPEAT_PATTERNS.some(p => p.test(finalAnswer));
@@ -704,12 +722,16 @@ export default function InterviewRoom() {
 
       const allQuestions = interview.question_bank.map((q: any) => typeof q === 'string' ? q : q.question || '');
 
+      const maxFollowUps = getFollowUpDepth(questionIndex.current);
+
       const liveResult = await callLiveEvaluator(
         originalQuestion,
         lastEntry.a || '',
         keyPoints,
-        followUpCountForCurrentQ.current > 0 ? finalAnswer : undefined,
-        allQuestions
+        lastEntry.followUps || [],
+        allQuestions,
+        maxFollowUps,
+        followUpCountForCurrentQ.current
       );
 
       sendLogToCmd('INFO', '[Evaluator 1] Decision Details', { decision: liveResult.decision, coverage: liveResult.coverage_percentage });
@@ -720,7 +742,6 @@ export default function InterviewRoom() {
         coverage: liveResult.coverage_percentage || 0,
       });
 
-      const maxFollowUps = getFollowUpDepth(questionIndex.current);
       const canAskFollowUp = followUpCountForCurrentQ.current < maxFollowUps;
 
       if (liveResult.decision === 'follow_up' && canAskFollowUp && liveResult.follow_up_question) {
@@ -758,21 +779,21 @@ export default function InterviewRoom() {
             body: JSON.stringify({ action: 'upload', fileName, fileType: 'video/webm' }),
           });
           const { signedUrl } = await res.json();
-          
-        await fetch(signedUrl, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'video/webm',
-          },
-          body: blob,
-        });
+
+          await fetch(signedUrl, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'video/webm',
+            },
+            body: blob,
+          });
 
           // Track segment in DB in the background
           const { data: cData } = await supabase.from('candidates').select('s3_uploaded_parts, session_state').eq('id', candidate.id).single();
           const existing = cData?.s3_uploaded_parts || [];
           const currentState = cData?.session_state || {};
-          
-          await supabase.from('candidates').update({ 
+
+          await supabase.from('candidates').update({
             s3_uploaded_parts: [...existing, { segment: fileName }],
             // Immediate update of session state index for robustness
             session_state: { ...currentState, segmentIndex: index, sessionCount: sessionCountRef.current }
@@ -797,7 +818,7 @@ export default function InterviewRoom() {
     isInterviewActive.current = true;
     // Enter fullscreen when interview starts
     enterFullscreen();
-    
+
     if (stream) {
       const mr = new MediaRecorder(stream, { mimeType: 'video/webm' });
       mr.ondataavailable = (e: any) => {
@@ -806,7 +827,7 @@ export default function InterviewRoom() {
           const currentIdx = segmentIndexRef.current++;
           const sessionPrefix = `S${String(sessionCountRef.current).padStart(2, '0')}`;
           const segmentFileName = `${candidate.id}/${sessionPrefix}_seg_${String(currentIdx).padStart(4, '0')}.webm`;
-          
+
           uploadQueueRef.current.push({ blob, fileName: segmentFileName, index: currentIdx });
           processUploadQueue();
         }
@@ -821,16 +842,16 @@ export default function InterviewRoom() {
 
       // Record a session break in the transcript with timestamp
       const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const breakMsg = { 
-        speaker: 'System' as any, 
-        text: `[SESSION INTERRUPTED - RESUMED AT ${timestamp}]`, 
+      const breakMsg = {
+        speaker: 'System' as any,
+        text: `[SESSION INTERRUPTED - RESUMED AT ${timestamp}]`,
         timestamp,
         isBreak: true,
         sessionNo: sessionCountRef.current
       };
       transcriptRef.current.push(breakMsg);
       setTranscript([...transcriptRef.current]);
-      
+
       // Also record in the saved structured transcript
       candidateAnswers.current.push({ ...breakMsg } as any);
       await saveInterviewState(); // Persist the incremented session count
@@ -840,21 +861,25 @@ export default function InterviewRoom() {
 
       if (lastMessage && lastMessage.speaker === 'Candidate') {
         const finalAnswer = lastMessage.text;
-        
+
         // ── Evaluator 1: Check key point coverage for the resumed answer ─────────────────────
         const keyPoints = questionIndex.current >= 0 ? getKeyPointsForQuestion(questionIndex.current) : [];
         if (keyPoints.length > 0 && questionIndex.current >= 0) {
-          const lastEntry = [...candidateAnswers.current].reverse().find((e:any) => !e.isBreak && e.q);
+          const lastEntry = [...candidateAnswers.current].reverse().find((e: any) => !e.isBreak && e.q);
           const originalQuestion = interview?.question_bank[questionIndex.current]?.question || (lastEntry ? lastEntry.q : '');
 
           const allQuestions = interview?.question_bank?.map((q: any) => typeof q === 'string' ? q : q.question || '') || [];
+
+          const maxFollowUps = getFollowUpDepth(questionIndex.current);
 
           const liveResult = await callLiveEvaluator(
             originalQuestion,
             lastEntry?.a || '',
             keyPoints,
-            followUpCountForCurrentQ.current > 0 ? finalAnswer : undefined,
-            allQuestions
+            lastEntry?.followUps || [],
+            allQuestions,
+            maxFollowUps,
+            followUpCountForCurrentQ.current
           );
 
           sendLogToCmd('INFO', '[Evaluator 1 - Resume] Decision', { decision: liveResult.decision });
@@ -864,7 +889,6 @@ export default function InterviewRoom() {
             coverage: liveResult.coverage_percentage || 0,
           });
 
-          const maxFollowUps = getFollowUpDepth(questionIndex.current);
           const canAskFollowUp = followUpCountForCurrentQ.current < maxFollowUps;
 
           if (liveResult.decision === 'follow_up' && canAskFollowUp && liveResult.follow_up_question) {
@@ -897,7 +921,7 @@ export default function InterviewRoom() {
         speaker: 'System' as any,
         text: `[SESSION 01 STARTED AT ${timestamp}]`
       } as any);
-      
+
       await askNextQuestion();
     }
   };
@@ -906,7 +930,7 @@ export default function InterviewRoom() {
     isInterviewActive.current = false;
     setSavingStatus('Finalizing your interview and saving signals...');
     try { recognitionRef.current?.stop(); } catch (e) { }
-    
+
     // 1. Stop recording and wait for final chunk
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
@@ -924,8 +948,8 @@ export default function InterviewRoom() {
     // 3. Prepare metrics
     const totalQuestions = interview?.question_bank?.length || 1;
     const coverages = coveragePerQuestion.current;
-    const avgCoverage = coverages.length > 0 
-      ? coverages.reduce((sum, c) => sum + c.coverage, 0) / coverages.length 
+    const avgCoverage = coverages.length > 0
+      ? coverages.reduce((sum, c) => sum + c.coverage, 0) / coverages.length
       : 0;
 
     const coverageData = {
@@ -989,7 +1013,7 @@ export default function InterviewRoom() {
       }
 
       setSavingStatus('Interview completed successfully.');
-      
+
       // 7. Cleanup candidate record
       await supabase.from('candidates').update({
         session_state: {},
