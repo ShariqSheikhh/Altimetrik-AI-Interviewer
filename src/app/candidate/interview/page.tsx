@@ -498,7 +498,7 @@ export default function InterviewRoom() {
           ...(followUpInstruction ? { followUpInstruction } : {}),
           ...(expectedNextQuestion ? { nextQuestionText: expectedNextQuestion } : {}),
           ...(repeatQuestionText ? { repeatQuestionText } : {}),
-          isResume: currentTranscript.length > 0 && !!expectedNextQuestion === false && !!followUpInstruction === false && !!repeatQuestionText === false && isResumeFlag,
+          isResume: isResumeFlag === true,
         }),
       });
 
@@ -569,12 +569,12 @@ export default function InterviewRoom() {
       }
     }
 
-    // Only update the local index if a technical question was actually asked
-    if (questionIndex.current < 0) {
-      if (data.currentQuestionIndex !== null && data.currentQuestionIndex !== undefined && data.currentQuestionIndex > 0) {
-        questionIndex.current = data.currentQuestionIndex - 1;
-      }
-    } else if (!isResume) {
+    // Trust the LLM's currentQuestionIndex to avoid drift
+    // The LLM tracks which question it's asking based on transcript history
+    if (data.currentQuestionIndex !== null && data.currentQuestionIndex !== undefined && data.currentQuestionIndex > 0) {
+      questionIndex.current = data.currentQuestionIndex - 1;
+    } else if (!isResume && questionIndex.current >= 0) {
+      // Fallback: only increment if LLM didn't provide an index AND we're not resuming
       questionIndex.current = questionIndex.current + 1;
     }
 

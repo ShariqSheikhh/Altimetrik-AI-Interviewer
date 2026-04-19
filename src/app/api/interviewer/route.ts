@@ -75,8 +75,9 @@ You must follow this exact sequence — do not skip or reorder any step:
 2. **Introduction** — Once they confirm they are ready, if they haven't introduced themselves, ask them to briefly introduce themselves. Do NOT use their name here. Wait for their response.
 
 3. **Interview Questions** — If the readiness and intro have not been completed, DO NOT ask technical questions. After the introduction, thank them naturally and begin asking the questions from the provided bank.
-   - **STRICT SEQUENTIAL ORDER**: You MUST ask Question 1, then Question 2, then Question 3, etc. Scan the conversation history to see where you are. NEVER skip or reorder these questions.
-   - **Natural Transitions**: Use smooth, human-like transitions between questions (e.g., "Great. Now, let's shift focus to...", "I'm curious to know your thoughts on..."). 
+   - **STRICT SEQUENTIAL ORDER**: You MUST ask Question 1, then Question 2, then Question 3, etc. Count the AI messages in the transcript that contain questions to determine your position. NEVER skip or reorder these questions.
+   - **CRITICAL**: Before responding, count how many distinct technical questions you have already asked in the transcript. Your next question index MUST be exactly one more than what you've already asked.
+   - **Natural Transitions**: Use smooth, human-like transitions between questions (e.g., "Great. Now, let's shift focus to...", "I'm curious to know your thoughts on...").
    - **NEVER use the candidate's name again** after the initial greeting.
    - **Rephrasing**: Do NOT read the question bank text verbatim. Weave the core question into a natural conversational sentence.
    - **Elaboration**: If the candidate asks you to elaborate or explain a question, you may only re-describe the goal or constraints. You MUST NOT provide any hints, answers, logic, or clues.
@@ -104,8 +105,8 @@ If you detect we are resuming (e.g., via a system flag or conversational gap), w
 You MUST respond with a valid JSON object matching this exact schema. Do not include any markdown wrappers (e.g., \`\`\`json) or conversational text outside the JSON.
 
 {
-  "diagnostic_thoughts": "<Briefly analyze the conversation history. What was the last thing you asked? Did the user answer it? What is the logical next step?>",
-  "current_question_index": <Integer representing the 1-based index of the question you are currently asking or following up on. Use null if not in the questioning phase.>,
+  "diagnostic_thoughts": "<First, COUNT all AI messages in the transcript that asked technical questions. Then verify: am I on the correct next question? Did the candidate answer the last question? What is the logical next step?>",
+  "current_question_index": <Integer representing the 1-based index of the question you are currently asking or following up on. Use null if not in the questioning phase. This MUST match the count of technical questions already asked + 1.>,
   "response_text": "<The actual spoken text to reply to the candidate.>",
   "is_completed": <boolean, true ONLY if all questions have been asked and answered, and you are thanking the candidate to end the interview.>
 }
@@ -184,8 +185,9 @@ Re-identify your position and resume naturally.`;
         } else {
           systemInstruction += `\n\n[STATE ANCHOR]\nThe candidate has just finished answering Question ${currentQuestionIndex + 1} of ${questionBank.length}. The STRICT next sequential question you MUST ask is Question ${currentQuestionIndex + 2}. Do NOT skip it and NEVER set "is_completed" to true until ALL questions are asked.`;
         }
+      } else {
+        systemInstruction += `\n\n[STATE ANCHOR]\nYou are at the START of the interview. Begin with the readiness check and introduction phase before asking any technical questions.`;
       }
-      // Fully LLM-driven flow handles sequence based on chatHistory and questionsBlock.
 
       // Sanitize transcript entries
       let chatHistory = '[Conversation has just begun. No messages yet.]';
