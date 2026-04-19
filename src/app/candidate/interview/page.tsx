@@ -431,8 +431,10 @@ export default function InterviewRoom() {
     question: string,
     answer: string,
     keyPoints: string[],
-    followUpAnswer?: string,
-    allQuestions?: string[]
+    followUpsHistory: {q: string, a: string}[],
+    allQuestions?: string[],
+    maxFollowUps?: number,
+    currentFollowUpCount?: number
   ) => {
     try {
       const res = await fetch('/api/live-evaluate', {
@@ -442,8 +444,10 @@ export default function InterviewRoom() {
           question,
           candidateAnswer: answer,
           keyPoints,
-          ...(followUpAnswer ? { followUpAnswer } : {}),
+          followUpsHistory,
           ...(allQuestions ? { allQuestions } : {}),
+          maxFollowUps,
+          currentFollowUpCount
         }),
       });
       return await res.json();
@@ -704,12 +708,16 @@ export default function InterviewRoom() {
 
       const allQuestions = interview.question_bank.map((q: any) => typeof q === 'string' ? q : q.question || '');
 
+      const maxFollowUps = getFollowUpDepth(questionIndex.current);
+
       const liveResult = await callLiveEvaluator(
         originalQuestion,
         lastEntry.a || '',
         keyPoints,
-        followUpCountForCurrentQ.current > 0 ? finalAnswer : undefined,
-        allQuestions
+        lastEntry.followUps || [],
+        allQuestions,
+        maxFollowUps,
+        followUpCountForCurrentQ.current
       );
 
       sendLogToCmd('INFO', '[Evaluator 1] Decision Details', { decision: liveResult.decision, coverage: liveResult.coverage_percentage });
@@ -720,7 +728,6 @@ export default function InterviewRoom() {
         coverage: liveResult.coverage_percentage || 0,
       });
 
-      const maxFollowUps = getFollowUpDepth(questionIndex.current);
       const canAskFollowUp = followUpCountForCurrentQ.current < maxFollowUps;
 
       if (liveResult.decision === 'follow_up' && canAskFollowUp && liveResult.follow_up_question) {
@@ -849,12 +856,16 @@ export default function InterviewRoom() {
 
           const allQuestions = interview?.question_bank?.map((q: any) => typeof q === 'string' ? q : q.question || '') || [];
 
+          const maxFollowUps = getFollowUpDepth(questionIndex.current);
+
           const liveResult = await callLiveEvaluator(
             originalQuestion,
             lastEntry?.a || '',
             keyPoints,
-            followUpCountForCurrentQ.current > 0 ? finalAnswer : undefined,
-            allQuestions
+            lastEntry?.followUps || [],
+            allQuestions,
+            maxFollowUps,
+            followUpCountForCurrentQ.current
           );
 
           sendLogToCmd('INFO', '[Evaluator 1 - Resume] Decision', { decision: liveResult.decision });
@@ -864,7 +875,6 @@ export default function InterviewRoom() {
             coverage: liveResult.coverage_percentage || 0,
           });
 
-          const maxFollowUps = getFollowUpDepth(questionIndex.current);
           const canAskFollowUp = followUpCountForCurrentQ.current < maxFollowUps;
 
           if (liveResult.decision === 'follow_up' && canAskFollowUp && liveResult.follow_up_question) {
