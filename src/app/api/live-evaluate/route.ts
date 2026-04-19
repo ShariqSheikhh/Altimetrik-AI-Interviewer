@@ -72,7 +72,7 @@ Analyze the candidate's answer(s) and determine which key points were covered an
 
 Then decide:
 - "move_next" — MANDATORY if the candidate demonstrates a clear understanding of the core concepts, even if their answer is concise. If they correctly use the terminology or list the required methods, treat it as covered. DO NOT be overly pedantic or demand essay-length answers. If they prove they know the answer, choose "move_next".
-- "follow_up" — Choose this if a critical concept is missing, OR if the candidate's answer is completely off-topic (e.g. they are answering a different question). Generate a natural follow-up question. If they were off-topic, politely nudge them back to the original topic in your follow-up. CRITICAL RULES: 1. NEVER repeat the exact original question verbatim. 2. NEVER give away the answer or hints.
+- "follow_up" — Choose this if a critical concept is missing, OR if the candidate's answer is completely off-topic (e.g. they are answering a different question). Generate a natural follow-up question. If they were off-topic, politely nudge them back to the original topic in your follow-up. CRITICAL RULES: 1. NEVER repeat the exact original question verbatim. 2. NEVER give away the answer or hints. 3. NEVER generate a new follow-up question of your own, strictly base it on the original question or the missing points.
 - "skip" — ONLY if the candidate explicitly passes on the question (e.g., "I don't know", "skip this"). Do not use skip for off-topic answers; try to redirect them instead.
 
 You MUST return ONLY a valid JSON object (no markdown, no extra text):
