@@ -69,8 +69,9 @@ async function uploadDriveResume(params: {
     driveUrl: string;
     interviewId: string;
     candidateId: string;
+    candidateName?: string;
 }): Promise<{ key: string; fileName: string }> {
-    const { driveUrl, interviewId, candidateId } = params;
+    const { driveUrl, interviewId, candidateId, candidateName } = params;
     const downloadUrl = getDownloadUrl(driveUrl);
     const response = await fetch(downloadUrl);
 
@@ -89,7 +90,8 @@ async function uploadDriveResume(params: {
     const fileName = sanitizeFileName(
         inferFileName(response.headers.get('content-disposition'), `resume_${candidateId}.pdf`),
     );
-    const key = `resume/${interviewId}/${candidateId}/admin/${Date.now()}_${fileName}`;
+    const safeCandidateName = sanitizeFileName((candidateName || 'candidate').trim()) || 'candidate';
+    const key = `resumes/${interviewId}/${safeCandidateName}_${candidateId}/admin/${Date.now()}_${fileName}`;
 
     await s3Client.send(
         new PutObjectCommand({
@@ -124,12 +126,13 @@ export async function POST(req: NextRequest) {
             const candidateId = String(body?.candidateId || '');
             const interviewId = String(body?.interviewId || '');
             const driveUrl = String(body?.driveUrl || '').trim();
+            const candidateName = String(body?.candidateName || '').trim();
 
             if (!candidateId || !interviewId || !driveUrl) {
                 return NextResponse.json({ error: 'Missing required fields.' }, { status: 400 });
             }
 
-            const { key, fileName } = await uploadDriveResume({ driveUrl, interviewId, candidateId });
+            const { key, fileName } = await uploadDriveResume({ driveUrl, interviewId, candidateId, candidateName });
 
             const { error: updateErr } = await supabase
                 .from('candidates')

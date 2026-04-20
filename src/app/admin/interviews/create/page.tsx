@@ -13,6 +13,12 @@ type CandidateUploadRow = {
   name: string;
   passkey: string;
   resumeDriveLink?: string;
+  selected?: boolean;
+  scoreStatus?: 'idle' | 'scoring' | 'done' | 'error';
+  score?: number;
+  scoreLabel?: string;
+  scoreSummary?: string;
+  scoreError?: string;
 };
 
 export default function CreateTest() {
@@ -30,6 +36,80 @@ export default function CreateTest() {
   const [showJdPreview, setShowJdPreview] = useState(false);
   const [jdPreviewText, setJdPreviewText] = useState('');
   const [jdPreviewHtml, setJdPreviewHtml] = useState('');
+
+  const selectedCount = candidates.filter((c) => c.selected).length;
+
+  const toggleCandidateSelection = (index: number) => {
+    setCandidates((prev) => prev.map((candidate, i) => {
+      if (i !== index) return candidate;
+      return { ...candidate, selected: !candidate.selected };
+    }));
+  };
+
+  const toggleSelectAllCandidates = () => {
+    const shouldSelectAll = candidates.some((c) => !c.selected);
+    setCandidates((prev) => prev.map((candidate) => ({ ...candidate, selected: shouldSelectAll })));
+  };
+
+  const scoreCandidateAtIndex = async (index: number) => {
+    const candidate = candidates[index];
+    if (!candidate) return;
+    if (!candidate.resumeDriveLink) {
+      setCandidates((prev) => prev.map((row, i) => i === index
+        ? { ...row, scoreStatus: 'error', scoreError: 'Missing resume link' }
+        : row));
+      return;
+    }
+    if (!jdS3Key) {
+      setError('Upload JD before scoring candidates.');
+      return;
+    }
+
+    setCandidates((prev) => prev.map((row, i) => i === index
+      ? { ...row, scoreStatus: 'scoring', scoreError: '' }
+      : row));
+
+    try {
+      const res = await fetch('/api/score-candidate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          candidateName: candidate.name,
+          resumeDriveLink: candidate.resumeDriveLink,
+          jdS3Key,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || 'Scoring failed');
+      }
+
+      setCandidates((prev) => prev.map((row, i) => i === index
+        ? {
+          ...row,
+          scoreStatus: 'done',
+          score: data.score,
+          scoreLabel: data.label,
+          scoreSummary: data.summary,
+          scoreError: '',
+        }
+        : row));
+    } catch (err: any) {
+      setCandidates((prev) => prev.map((row, i) => i === index
+        ? { ...row, scoreStatus: 'error', scoreError: err.message || 'Scoring failed' }
+        : row));
+    }
+  };
+
+  const handleScoreAllCandidates = async () => {
+    for (let i = 0; i < candidates.length; i++) {
+      if (candidates[i]?.resumeDriveLink) {
+        // Keep sequential calls to avoid Bedrock throttling on large sheets.
+        await scoreCandidateAtIndex(i);
+      }
+    }
+  };
 
   const handleJDUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -188,6 +268,8 @@ export default function CreateTest() {
             name: name || 'Candidate',
             passkey: Math.random().toString(36).slice(-8).toUpperCase(),
             resumeDriveLink,
+            selected: false,
+            scoreStatus: 'idle',
           });
         }
       });
@@ -286,6 +368,7 @@ export default function CreateTest() {
     if (!title) return setError('Title is required');
     if (questions.some(q => !q.question.trim())) return setError('All questions must be filled');
     if (candidates.length === 0) return setError('At least one candidate is required from Excel');
+    if (selectedCount === 0) return setError('Select at least one candidate to schedule interview invites.');
 
     setLoading(true);
     setError('');
@@ -302,7 +385,9 @@ export default function CreateTest() {
 
       if (iError || !interview) throw iError || new Error('Failed to create interview');
 
-      const candidatesToInsert = candidates.map((c) => ({
+      const selectedCandidates = candidates.filter((c) => c.selected);
+
+      const candidatesToInsert = selectedCandidates.map((c) => ({
         email: c.email,
         name: c.name,
         passkey: c.passkey,
@@ -317,7 +402,7 @@ export default function CreateTest() {
 
       if (cError) throw cError;
 
-      const candidatesByEmail = new Map(candidates.map((c) => [c.email.toLowerCase(), c]));
+      const candidatesByEmail = new Map(selectedCandidates.map((c) => [c.email.toLowerCase(), c]));
       let resumeImported = 0;
       let resumeFailed = 0;
 
@@ -334,6 +419,7 @@ export default function CreateTest() {
               action: 'ingestDriveLink',
               interviewId: interview.id,
               candidateId: savedCandidate.id,
+              candidateName: sourceCandidate.name,
               driveUrl: sourceCandidate.resumeDriveLink,
             }),
           });
@@ -581,31 +667,60 @@ export default function CreateTest() {
               </h2>
               <p className="text-sm text-slate-500 font-medium">Upload Excel with <span className="text-slate-900 font-bold">Name</span>, <span className="text-slate-900 font-bold">Email</span>, and <span className="text-slate-900 font-bold">ResumeDriveLink</span> columns.</p>
             </div>
-            <label className="cursor-pointer bg-slate-900 hover:bg-black px-8 py-4 rounded-2xl flex items-center gap-3 transition-all active:scale-95 shadow-xl text-white">
-              <Upload size={20} />
-              <span className="font-bold text-sm">Upload Candidates</span>
-              <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFileUpload} />
-            </label>
+            <div className="flex items-center gap-3">
+              {candidates.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleScoreAllCandidates}
+                  disabled={!jdS3Key || candidates.every((c) => !c.resumeDriveLink)}
+                  className="bg-white border border-slate-200 hover:border-blue-300 px-6 py-4 rounded-2xl flex items-center gap-2 transition-all active:scale-95 shadow-sm text-slate-700 disabled:opacity-50"
+                >
+                  <span className="font-bold text-sm">Score All</span>
+                </button>
+              )}
+              <label className="cursor-pointer bg-slate-900 hover:bg-black px-8 py-4 rounded-2xl flex items-center gap-3 transition-all active:scale-95 shadow-xl text-white">
+                <Upload size={20} />
+                <span className="font-bold text-sm">Upload Candidates</span>
+                <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFileUpload} />
+              </label>
+            </div>
           </div>
 
           {candidates.length > 0 && (
             <div className="animate-in fade-in slide-in-from-top-2 duration-500">
               <div className="flex items-center gap-2 mb-6 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-xl w-fit text-xs font-black uppercase tracking-widest border border-emerald-100">
                 <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-                {candidates.length} Profiles Ready
+                {candidates.length} Profiles Ready {selectedCount > 0 ? `| ${selectedCount} Selected` : ''}
               </div>
               <div className="overflow-hidden rounded-3xl border border-slate-100 shadow-sm">
                 <table className="w-full text-left text-sm border-collapse">
                   <thead className="bg-slate-50">
                     <tr>
+                      <th className="px-4 py-4 font-black text-slate-400 text-[10px] uppercase tracking-widest text-center w-12">
+                        <input
+                          type="checkbox"
+                          checked={candidates.length > 0 && selectedCount === candidates.length}
+                          onChange={toggleSelectAllCandidates}
+                          className="w-4 h-4 rounded border-slate-300"
+                        />
+                      </th>
                       <th className="px-6 py-4 font-black text-slate-400 text-[10px] uppercase tracking-widest">Name</th>
                       <th className="px-6 py-4 font-black text-slate-400 text-[10px] uppercase tracking-widest">Email Address</th>
                       <th className="px-6 py-4 font-black text-slate-400 text-[10px] uppercase tracking-widest">Resume Link</th>
+                      <th className="px-6 py-4 font-black text-slate-400 text-[10px] uppercase tracking-widest">Score</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50 bg-white">
                     {candidates.map((c, i) => (
                       <tr key={i} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="px-4 py-4 text-center">
+                          <input
+                            type="checkbox"
+                            checked={!!c.selected}
+                            onChange={() => toggleCandidateSelection(i)}
+                            className="w-4 h-4 rounded border-slate-300"
+                          />
+                        </td>
                         <td className="px-6 py-4 font-bold text-slate-900">{c.name}</td>
                         <td className="px-6 py-4 text-slate-500 font-medium">{c.email}</td>
                         <td className="px-6 py-4">
@@ -618,6 +733,15 @@ export default function CreateTest() {
                               Missing
                             </span>
                           )}
+                        </td>
+                        <td className="px-6 py-4">
+                          {c.scoreStatus === 'scoring' && <span className="text-xs font-bold text-blue-600">Scoring...</span>}
+                          {c.scoreStatus === 'done' && (
+                            <div className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-blue-50 text-blue-700 border border-blue-100">
+                              {c.score}% {c.scoreLabel ? `- ${c.scoreLabel}` : ''}
+                            </div>
+                          )}
+                          {c.scoreStatus === 'error' && <span className="text-xs font-bold text-red-600">{c.scoreError || 'Failed'}</span>}
                         </td>
                       </tr>
                     ))}
