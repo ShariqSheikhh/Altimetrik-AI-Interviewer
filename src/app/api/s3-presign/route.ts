@@ -44,11 +44,15 @@ export async function POST(req: NextRequest) {
           Bucket: bucketName,
           Key: fileName,
         });
-        await s3Client.send(headCommand);
+        const headData = await s3Client.send(headCommand);
+
+        const safeName = String(fileName || '').split('/').pop() || 'document';
 
         const command = new GetObjectCommand({
           Bucket: bucketName,
           Key: fileName,
+          ResponseContentDisposition: `inline; filename="${safeName}"`,
+          ResponseContentType: headData.ContentType || undefined,
         });
         const signedUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
         return NextResponse.json({ signedUrl });
