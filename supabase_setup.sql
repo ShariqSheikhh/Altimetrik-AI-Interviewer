@@ -53,4 +53,11 @@ ADD COLUMN IF NOT EXISTS session_started_at TIMESTAMPTZ,
 ADD COLUMN IF NOT EXISTS session_state JSONB DEFAULT '{}',
 ADD COLUMN IF NOT EXISTS s3_upload_id TEXT,    
 ADD COLUMN IF NOT EXISTS s3_upload_key TEXT,
-ADD COLUMN IF NOT EXISTS s3_uploaded_parts JSONB DEFAULT '[]';
+ADD COLUMN IF NOT EXISTS s3_uploaded_parts JSONB DEFAULT '[]',
+ADD COLUMN IF NOT EXISTS resume_source_url TEXT,
+ADD COLUMN IF NOT EXISTS resume_file_name TEXT,
+ADD COLUMN IF NOT EXISTS resume_s3_key TEXT,
+ADD COLUMN IF NOT EXISTS resume_source TEXT,
+ADD COLUMN IF NOT EXISTS resume_uploaded_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS idx_candidates_interview_email ON public.candidates(interview_id, email);
