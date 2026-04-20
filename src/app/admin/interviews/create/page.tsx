@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import * as ExcelJS from 'exceljs';
-import { Upload, Plus, FileSpreadsheet, Loader2, ArrowLeft, Trash2, ShieldCheck, GraduationCap, Users } from 'lucide-react';
+import * as mammoth from 'mammoth/mammoth.browser';
+import { Upload, Plus, FileSpreadsheet, Loader2, ArrowLeft, Trash2, ShieldCheck, GraduationCap, Users, ChevronDown, ChevronUp } from 'lucide-react';
 import Link from 'next/link';
 
 export default function CreateTest() {
@@ -14,6 +15,103 @@ export default function CreateTest() {
   const [candidates, setCandidates] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [jdFileName, setJdFileName] = useState('');
+  const [jdS3Key, setJdS3Key] = useState('');
+  const [jdUploading, setJdUploading] = useState(false);
+  const [jdPreviewUrl, setJdPreviewUrl] = useState('');
+  const [jdMimeType, setJdMimeType] = useState('');
+  const [showJdPreview, setShowJdPreview] = useState(false);
+  const [jdPreviewText, setJdPreviewText] = useState('');
+  const [jdPreviewHtml, setJdPreviewHtml] = useState('');
+
+  const handleJDUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const allowed = [
+      'application/pdf',
+      'text/plain',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ];
+
+    if (!allowed.includes(file.type)) {
+      setError('Only PDF, TXT, and DOCX files are allowed for JD upload.');
+      return;
+    }
+
+    setJdUploading(true);
+    setError('');
+
+    try {
+      const cleanedName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const key = `jds/${timestamp}_${cleanedName}`;
+
+      const presignRes = await fetch('/api/s3-presign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'upload',
+          fileName: key,
+          fileType: file.type,
+        }),
+      });
+
+      const presignData = await presignRes.json();
+      if (!presignRes.ok || !presignData?.signedUrl) {
+        throw new Error(presignData?.error || 'Failed to generate upload URL for JD.');
+      }
+
+      const uploadRes = await fetch(presignData.signedUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': file.type,
+        },
+        body: file,
+      });
+
+      if (!uploadRes.ok) {
+        throw new Error('Failed to upload JD file to S3.');
+      }
+
+      setJdFileName(file.name);
+      setJdS3Key(key);
+      setJdMimeType(file.type);
+      setShowJdPreview(false);
+      setJdPreviewText('');
+      setJdPreviewHtml('');
+
+      if (file.type === 'text/plain') {
+        const txt = await file.text();
+        setJdPreviewText(txt);
+      } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await mammoth.convertToHtml({ arrayBuffer });
+        setJdPreviewHtml(result.value || '');
+      }
+
+      const getRes = await fetch('/api/s3-presign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'get',
+          fileName: key,
+        }),
+      });
+
+      const getData = await getRes.json();
+      if (!getRes.ok || !getData?.signedUrl) {
+        throw new Error(getData?.error || 'Failed to generate JD preview URL.');
+      }
+
+      setJdPreviewUrl(getData.signedUrl);
+    } catch (err: any) {
+      setError(err.message || 'JD upload failed.');
+    } finally {
+      setJdUploading(false);
+      e.target.value = '';
+    }
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -223,6 +321,58 @@ export default function CreateTest() {
                 placeholder="e.g. Senior Frontend Engineer"
               />
             </div>
+        </section>
+
+        {/* Job Description Section */}
+        <section className="bg-white border border-slate-200 rounded-[2.5rem] p-10 shadow-sm relative overflow-hidden">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900 flex items-center gap-3">
+                     <FileSpreadsheet size={24} className="text-blue-500" />
+                     Job Description
+                  </h2>
+                  <p className="text-sm text-slate-500 font-medium mt-2">Upload JD file in <span className="text-slate-900 font-bold">PDF, TXT, or DOCX</span> format.</p>
+                </div>
+
+                <label className="cursor-pointer bg-slate-900 hover:bg-black px-8 py-4 rounded-2xl flex items-center gap-3 transition-all active:scale-95 shadow-xl text-white">
+                    {jdUploading ? <Loader2 size={20} className="animate-spin" /> : <Upload size={20} />}
+                    <span className="font-bold text-sm">{jdUploading ? 'Uploading JD...' : 'Upload JD'}</span>
+                    <input type="file" accept=".pdf,.txt,.docx" className="hidden" onChange={handleJDUpload} disabled={jdUploading} />
+                </label>
+            </div>
+
+            {jdPreviewUrl && (
+              <div className="mt-6 border border-slate-200 rounded-2xl overflow-hidden bg-slate-50">
+                <button
+                  type="button"
+                  onClick={() => setShowJdPreview((prev) => !prev)}
+                  className="w-full px-4 py-3 border-b border-slate-200 bg-white flex items-center justify-between gap-3"
+                >
+                  <p className="text-xs font-black text-slate-500 uppercase tracking-widest">JD Preview</p>
+                  <span className="text-slate-500">
+                    {showJdPreview ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                  </span>
+                </button>
+
+                {showJdPreview && (
+                  <>
+                    {jdMimeType === 'application/pdf' ? (
+                      <iframe
+                        src={jdPreviewUrl}
+                        title="JD Preview"
+                        className="w-full h-[420px] bg-white"
+                      />
+                    ) : jdMimeType === 'text/plain' ? (
+                      <div className="p-4 bg-white">
+                        <pre className="text-sm text-slate-700 whitespace-pre-wrap break-words max-h-[420px] overflow-auto">{jdPreviewText || 'No preview available.'}</pre>
+                      </div>
+                    ) : (
+                      <div className="p-4 bg-white text-sm text-slate-700 max-h-[420px] overflow-auto leading-relaxed" dangerouslySetInnerHTML={{ __html: jdPreviewHtml || '<p>No preview available.</p>' }} />
+                    )}
+                  </>
+                )}
+              </div>
+            )}
         </section>
 
         {/* Question Bank Section */}
