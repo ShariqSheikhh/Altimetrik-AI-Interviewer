@@ -40,6 +40,8 @@ export default function InterviewRoom() {
   const [transcript, setTranscript] = useState<{ speaker: 'AI' | 'Candidate', text: string }[]>([]);
   const transcriptRef = useRef<{ speaker: 'AI' | 'Candidate', text: string }[]>([]);
   const [savingStatus, setSavingStatus] = useState('');
+  const [evalProgress, setEvalProgress] = useState(0);
+  const [evalStatus, setEvalStatus] = useState('');
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -710,8 +712,6 @@ export default function InterviewRoom() {
       return;
     }
 
-    await saveInterviewState();
-
     // ── Evaluator 1: Check key point coverage ─────────────────────
     const keyPoints = questionIndex.current >= 0 ? getKeyPointsForQuestion(questionIndex.current) : [];
 
@@ -756,6 +756,10 @@ export default function InterviewRoom() {
     // No key points, or Evaluator 1 said move on / max follow-ups reached → next question
     followUpsPerQuestion.current.push({ questionIndex: questionIndex.current, count: followUpCountForCurrentQ.current });
     followUpCountForCurrentQ.current = 0;
+
+    // Persist everything (including the metrics we just pushed) before moving on
+    await saveInterviewState();
+    
     await askNextQuestion(transcriptRef.current);
   };
 
@@ -929,6 +933,11 @@ export default function InterviewRoom() {
   const handleEndInterview = async () => {
     isInterviewActive.current = false;
     setSavingStatus('Finalizing your interview and saving signals...');
+    
+    // CRITICAL: Perform one last database sync to ensure the Last Question's 
+    // coverage and follow-up metrics are captured in the session_state.
+    await saveInterviewState();
+
     try { recognitionRef.current?.stop(); } catch (e) { }
 
     // 1. Stop recording and wait for final chunk
@@ -963,73 +972,95 @@ export default function InterviewRoom() {
       total_questions: totalQuestions,
     };
 
-    // 4. Call Evaluator 2
-    let evaluationResult: any = {};
+    // 4. Trigger Background Evaluation
+    setSavingStatus('AI is evaluating your session...');
+    console.log('[CLIENT] Triggering background evaluation...');
     try {
-      setSavingStatus('AI is evaluating your session...');
-      const res = await fetch('/api/evaluate', {
+      const triggerRes = await fetch('/api/trigger-evaluate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          candidateId: candidate.id,
+          interviewId: interview.id,
           questionBank: interview.question_bank,
-          previousContext: transcriptRef.current,
+          transcript: transcriptRef.current,
           coverageData,
           followUpData,
           candidateName: candidate.name,
-          candidateEmail: candidate.email
+          tabSwitches: tabSwitchCount,
+          fullscreenExits: fullscreenExitCount,
+          candidateAnswersStructured: candidateAnswers.current
         })
       });
-      const data = await res.json();
-      if (data.evaluation) evaluationResult = data.evaluation;
-    } catch (e) {
-      sendLogToCmd('ERROR', '[Evaluator 2] Failed', { error: String(e) });
-    }
 
-    const finalEvaluation = {
-      ...evaluationResult,
-      security_violations: { tab_switches: tabSwitchCount, fullscreen_exits: fullscreenExitCount }
-    };
+      const triggerData = await triggerRes.json();
+      console.log('[CLIENT] Trigger response:', triggerData);
 
-    // 5. Save Results
-    try {
-      await supabase.from('results').insert([{
-        candidate_id: candidate.id,
-        interview_id: interview.id,
-        evaluation: finalEvaluation,
-        transcript_data: { full_transcript: candidateAnswers.current.filter((item) => item.a !== '' || item.isBreak) },
-        video_url: finalVideoUrl
-      }]);
+      // 4.1 Start Polling for Evaluation Status
+      let isDone = false;
+      let totalWait = 0;
+      const maxWait = 120; // 2 minutes max
+      
+      console.log('[CLIENT] Starting evaluation polling loop...');
+      while (!isDone && totalWait < maxWait) {
+          await new Promise(r => setTimeout(r, 4000));
+          totalWait += 4;
+          
+          const { data: cData, error: cErr } = await supabase
+              .from('candidates')
+              .select('evaluation_status, evaluation_progress, evaluation_error')
+              .eq('id', candidate.id)
+              .single();
+          
+          if (!cErr && cData) {
+              console.log(`[CLIENT] Eval Status: ${cData.evaluation_status} | Progress: ${cData.evaluation_progress}%`);
+              
+              if (cData.evaluation_error) {
+                  console.error('%c[LAMBDA ERROR DETECTED]', 'background: #fee2e2; color: #b91c1c; font-weight: bold; padding: 4px; border-radius: 4px;');
+                  console.error(cData.evaluation_error);
+              }
 
-      setSavingStatus('Finalizing your video recording...');
-      // 6. Trigger Video Stitching Pipeline on candidate side
-      try {
-        await fetch('/api/trigger-stitch', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ candidateId: candidate.id })
-        });
-      } catch (err) {
-        sendLogToCmd('ERROR', 'Failed to trigger video stitch', { error: String(err) });
+              setEvalStatus(cData.evaluation_status || 'PROCESSING');
+              setEvalProgress(cData.evaluation_progress || 0);
+              
+              if (cData.evaluation_status === 'COMPLETED') {
+                  isDone = true;
+                  console.log('[CLIENT] Evaluation COMPLETED successfully.');
+                  setSavingStatus('Evaluation successful! You can now return to the dashboard.');
+              }
+              if (cData.evaluation_status === 'FAILED') {
+                  isDone = true;
+                  console.error('[CLIENT] Evaluation FAILED.');
+                  setSavingStatus('Technical glitch during final scoring, but your interview was saved successfully.');
+              }
+          } else {
+              console.warn('[CLIENT] Polling error or empty data:', cErr);
+          }
       }
-
-      setSavingStatus('Interview completed successfully.');
-
-      // 7. Cleanup candidate record
-      await supabase.from('candidates').update({
-        session_state: {},
-        s3_uploaded_parts: []
-      }).eq('id', candidate.id);
-
-      sessionStorage.setItem('interview_done', 'true');
-      isInterviewActive.current = false;
-      streamRef.current?.getTracks().forEach(t => t.stop());
-
-      if (document.exitFullscreen) document.exitFullscreen().catch(() => { });
-      window.location.reload();
-    } catch (err) {
-      sendLogToCmd('ERROR', 'Failed to save results', { error: String(err) });
-      window.location.reload();
+    } catch (e) {
+      console.error('[CLIENT] Evaluation Trigger/Poll Error:', e);
+      sendLogToCmd('ERROR', '[Trigger Evaluate] Failed', { error: String(e) });
     }
+
+    // 5. Trigger Video Stitching
+    console.log('[CLIENT] Triggering video stitching...');
+    try {
+      await fetch('/api/trigger-stitch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ candidateId: candidate.id })
+      });
+    } catch (err) {
+      console.error('[CLIENT] Stitching Trigger Error:', err);
+      sendLogToCmd('ERROR', 'Failed to trigger video stitch', { error: String(err) });
+    }
+
+    setIsUploadComplete(true);
+    sessionStorage.setItem('interview_done', 'true');
+    isInterviewActive.current = false;
+    streamRef.current?.getTracks().forEach(t => t.stop());
+
+    if (document.exitFullscreen) document.exitFullscreen().catch(() => { });
   };
 
   return (
@@ -1183,12 +1214,25 @@ export default function InterviewRoom() {
                 <ShieldCheck size={48} className="text-blue-600 animate-bounce" />
               </div>
 
-              <h2 className="text-4xl font-bold mb-3 text-slate-900 tracking-tight">
-                {isUploadComplete ? 'Assessment Complete!' : 'Finalizing...'}
-              </h2>
-              <p className={`text-slate-500 text-lg mb-10 max-w-md ${!isUploadComplete ? 'animate-pulse' : ''}`}>
+              <p className={`text-slate-500 text-lg mb-1 max-w-md ${!isUploadComplete ? 'animate-pulse' : ''}`}>
                 {savingStatus}
               </p>
+
+              {/* Progress Bar */}
+              {!isUploadComplete && (
+                  <div className="w-full max-w-xs mt-6 space-y-3">
+                      <div className="flex justify-between items-center text-[11px] font-black uppercase tracking-widest text-slate-400">
+                          <span>{evalStatus || 'Initializing'}</span>
+                          <span className="text-blue-600">{evalProgress}%</span>
+                      </div>
+                      <div className="h-3 bg-slate-100 rounded-full overflow-hidden border border-slate-200 p-1">
+                          <div 
+                              className="h-full bg-blue-600 rounded-full transition-all duration-1000 shadow-[0_0_15px_rgba(37,99,235,0.4)]"
+                              style={{ width: `${evalProgress}%` }}
+                          />
+                      </div>
+                  </div>
+              )}
 
               {isUploadComplete && (
                 <button
