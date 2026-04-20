@@ -63,7 +63,7 @@ export default function SendEmailPage() {
       <p style="margin-top: 40px; font-size: 13px; color: #64748b;"><strong>Technical Requirements:</strong> Stable internet, Chrome/Edge browser, and full-screen mode enabled throughout the session.</p>
     </div>
     <div class="footer">
-      <p>&copy; 2024 Altimetrik Corporate Systems. All rights reserved.</p>
+      <p>&copy; 2026 Altimetrik Corporate Systems. All rights reserved.</p>
       <p>This is an automated operational message. Do not reply.</p>
     </div>
   </div>
