@@ -7,7 +7,7 @@ import {
   ArrowLeft, User, Video, FileText, ShieldAlert, Loader2,
   Target, TrendingDown, ShieldCheck, TrendingUp, AlertTriangle,
   MessageSquareWarning, CheckCircle2, ChevronDown, ChevronUp,
-  Settings, Cpu, Terminal
+  Settings, Cpu, Terminal, XCircle, Info
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -16,6 +16,83 @@ function ScoreBar({ value, max, color }: { value: number; max: number; color: st
   return (
     <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
       <div className={`h-full rounded-full bg-${color}-500 transition-all`} style={{ width: `${pct}%` }} />
+    </div>
+  );
+}
+
+function FormattedFeedback({ text }: { text: string }) {
+  if (!text) return <p className="text-slate-400 italic">No feedback available.</p>;
+
+  // Regex to split into sections
+  const sections = {
+    strengths: text.match(/Strengths:([\s\S]*?)(?=Weaknesses:|Overview:|$)/i)?.[1]?.trim(),
+    weaknesses: text.match(/Weaknesses:([\s\S]*?)(?=Strengths:|Overview:|$)/i)?.[1]?.trim(),
+    overview: text.match(/Overview:([\s\S]*?)(?=Strengths:|Weaknesses:|$)/i)?.[1]?.trim(),
+  };
+
+  const parseList = (sectionText: string | undefined) => {
+    if (!sectionText) return [];
+    return sectionText
+      .split('\n')
+      .map(line => line.replace(/^-\s*/, '').trim())
+      .filter(line => line.length > 0);
+  };
+
+  const strengthsList = parseList(sections.strengths);
+  const weaknessesList = parseList(sections.weaknesses);
+
+  // If no sections were found, just show the raw text
+  if (!sections.strengths && !sections.weaknesses && !sections.overview) {
+    return <p className="text-slate-600 font-medium leading-relaxed italic">{text}</p>;
+  }
+
+  return (
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-700">
+      {strengthsList.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 text-emerald-600">
+            <CheckCircle2 size={18} className="shrink-0" />
+            <h4 className="text-[11px] font-black uppercase tracking-[0.2em]">Key Strengths</h4>
+          </div>
+          <ul className="space-y-3">
+            {strengthsList.map((s, i) => (
+              <li key={i} className="flex gap-3 text-sm font-medium text-slate-600 leading-relaxed">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0 mt-2" />
+                {s}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {weaknessesList.length > 0 && (
+        <div className="space-y-4 pt-4 border-t border-slate-50">
+          <div className="flex items-center gap-2 text-rose-500">
+            <XCircle size={18} className="shrink-0" />
+            <h4 className="text-[11px] font-black uppercase tracking-[0.2em]">Areas for Improvement</h4>
+          </div>
+          <ul className="space-y-3">
+            {weaknessesList.map((w, i) => (
+              <li key={i} className="flex gap-3 text-sm font-medium text-slate-600 leading-relaxed">
+                <div className="w-1.5 h-1.5 rounded-full bg-rose-300 shrink-0 mt-2" />
+                {w}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {sections.overview && (
+        <div className="space-y-4 pt-6 mt-6 bg-slate-50/80 -mx-8 px-8 pb-8 border-t border-slate-100 rounded-b-[2.5rem]">
+          <div className="flex items-center gap-2 text-blue-500">
+            <Info size={16} className="shrink-0" />
+            <h4 className="text-[11px] font-black uppercase tracking-[0.2em]">Executive Summary</h4>
+          </div>
+          <p className="text-sm font-bold text-slate-700 leading-[1.8] italic">
+            &ldquo;{sections.overview.replace(/"/g, '')}&rdquo;
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -574,13 +651,11 @@ export default function ResultDetails() {
           </div>
 
           {/* Overall Feedback */}
-          <div className="bg-white border border-slate-200 rounded-[2.5rem] p-8 shadow-sm">
-            <h3 className="font-bold text-slate-900 flex items-center gap-2 mb-6 border-b border-slate-50 pb-4">
+          <div className="bg-white border border-slate-200 rounded-[2.5rem] p-8 shadow-sm overflow-hidden">
+            <h3 className="font-bold text-slate-900 flex items-center gap-2 mb-8 border-b border-slate-50 pb-4">
               <TrendingUp size={18} className="text-emerald-500" /> Overall Feedback
             </h3>
-            <p className="prose prose-slate prose-sm font-medium leading-[1.8] text-slate-600 italic">
-              &ldquo;{result.evaluation?.feedback || 'Summary feedback not available.'}&rdquo;
-            </p>
+            <FormattedFeedback text={result.evaluation?.feedback} />
           </div>
 
           {/* Candidate Info */}

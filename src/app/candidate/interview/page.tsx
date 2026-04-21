@@ -40,6 +40,8 @@ export default function InterviewRoom() {
   const [transcript, setTranscript] = useState<{ speaker: 'AI' | 'Candidate', text: string }[]>([]);
   const transcriptRef = useRef<{ speaker: 'AI' | 'Candidate', text: string }[]>([]);
   const [savingStatus, setSavingStatus] = useState('');
+  const [evalProgress, setEvalProgress] = useState(0);
+  const [evalStatus, setEvalStatus] = useState('');
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -49,7 +51,7 @@ export default function InterviewRoom() {
   const isListeningRef = useRef(false); // ref mirror of isListening — safe to read in closures
 
   const questionIndex = useRef(-1);
-  const candidateAnswers = useRef<{ q?: string, a?: string, followUp?: string, followUpAnswer?: string, followUps?: { q: string, a: string }[], isBreak?: boolean, sessionNo?: number, timestamp?: string, speaker?: string, text?: string }[]>([]);
+  const candidateAnswers = useRef<{ q?: string, a?: string, followupCount?: number, followUp?: string, followUpAnswer?: string, followUps?: { q: string, a: string }[], isBreak?: boolean, sessionNo?: number, timestamp?: string, speaker?: string, text?: string }[]>([]);
   const finalizedTextRef = useRef('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const selectedVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
@@ -79,10 +81,22 @@ export default function InterviewRoom() {
 
   const enterFullscreen = () => {
     const el = document.documentElement;
-    if (el.requestFullscreen) el.requestFullscreen();
-    else if ((el as any).webkitRequestFullscreen) (el as any).webkitRequestFullscreen();
-    else if ((el as any).mozRequestFullScreen) (el as any).mozRequestFullScreen();
-    else if ((el as any).msRequestFullscreen) (el as any).msRequestFullscreen();
+    const isFs =
+      !!document.fullscreenElement ||
+      !!(document as any).webkitFullscreenElement ||
+      !!(document as any).mozFullScreenElement ||
+      !!(document as any).msFullscreenElement;
+
+    if (isFs) return; // Already in fullscreen
+
+    try {
+      if (el.requestFullscreen) el.requestFullscreen().catch(() => { });
+      else if ((el as any).webkitRequestFullscreen) (el as any).webkitRequestFullscreen().catch(() => { });
+      else if ((el as any).mozRequestFullScreen) (el as any).mozRequestFullScreen().catch(() => { });
+      else if ((el as any).msRequestFullscreen) (el as any).msRequestFullscreen().catch(() => { });
+    } catch (e) {
+      // Catch synchronous errors just in case
+    }
   };
 
   const showSecurityWarning = (msg: string) => {
@@ -103,7 +117,13 @@ export default function InterviewRoom() {
       if (isInterviewActive.current) {
         if (!isFs) {
           // Candidate exited fullscreen, count the violation
-          setFullscreenExitCount(prev => prev + 1);
+          setFullscreenExitCount(prev => {
+            const next = prev + 1;
+            sendLogToCmd('WARN', `Fullscreen Exit Detected (Total: ${next})`);
+            // Immediate persistence
+            saveInterviewState(next, undefined);
+            return next;
+          });
           // ⚠️ Cannot call requestFullscreen() here — browsers require a direct
           // user gesture (click). Show a blocking overlay instead; the button
           // inside it will call enterFullscreen() as a valid user gesture.
@@ -111,6 +131,7 @@ export default function InterviewRoom() {
         } else {
           // Fullscreen restored (e.g. candidate clicked the button)
           setShowFullscreenPrompt(false);
+          sendLogToCmd('INFO', 'Fullscreen Restored');
         }
       }
     };
@@ -182,7 +203,13 @@ export default function InterviewRoom() {
     const handleVisibilityChange = () => {
       if (document.hidden && isInterviewActive.current) {
         // Increment violation counter and show a temporary amber toast
-        setTabSwitchCount(prev => prev + 1);
+        setTabSwitchCount(prev => {
+          const next = prev + 1;
+          sendLogToCmd('WARN', `Tab Switch Detected (Total: ${next})`);
+          // Immediate persistence
+          saveInterviewState(undefined, next);
+          return next;
+        });
         setShowTabWarning(true);
         setTimeout(() => setShowTabWarning(false), 4000);
       }
@@ -245,9 +272,14 @@ export default function InterviewRoom() {
         if (state.coveragePerQuestion) coveragePerQuestion.current = state.coveragePerQuestion;
         if (state.questionsWithFollowUps) questionsWithFollowUps.current = state.questionsWithFollowUps;
         if (state.followUpCountForCurrentQ) followUpCountForCurrentQ.current = state.followUpCountForCurrentQ;
+        if (state.followUpsPerQuestion) followUpsPerQuestion.current = state.followUpsPerQuestion;
 
         // NEW: Load Session Count on Resume (don't increment yet)
         sessionCountRef.current = state.sessionCount || 1;
+
+        // RESTORE Security Violation Counters
+        if (state.tabSwitches !== undefined) setTabSwitchCount(state.tabSwitches);
+        if (state.fullscreenExits !== undefined) setFullscreenExitCount(state.fullscreenExits);
 
         // Reset segment index for the new session
         segmentIndexRef.current = 1;
@@ -458,7 +490,8 @@ export default function InterviewRoom() {
   };
 
   // ── State Persistence Logic ──
-  const saveInterviewState = async () => {
+  // allow optional overrides for security counters since setXState is async
+  const saveInterviewState = async (fsOverride?: number, tsOverride?: number) => {
     const cid = localStorage.getItem('candidate_id');
     if (!cid) return;
 
@@ -469,8 +502,12 @@ export default function InterviewRoom() {
       coveragePerQuestion: coveragePerQuestion.current,
       questionsWithFollowUps: questionsWithFollowUps.current,
       followUpCountForCurrentQ: followUpCountForCurrentQ.current,
+      followUpsPerQuestion: followUpsPerQuestion.current,
       segmentIndex: segmentIndexRef.current,
       sessionCount: sessionCountRef.current,
+      // Persistence for security violations
+      fullscreenExits: fsOverride !== undefined ? fsOverride : fullscreenExitCount,
+      tabSwitches: tsOverride !== undefined ? tsOverride : tabSwitchCount,
     };
 
     try {
@@ -586,7 +623,7 @@ export default function InterviewRoom() {
     // Track the question
     lastQuestionText.current = cleanedResponse;
     followUpCountForCurrentQ.current = 0;  // reset follow-up counter for new question
-    candidateAnswers.current.push({ q: cleanedResponse, a: '', followUps: [] });
+    candidateAnswers.current.push({ q: cleanedResponse, a: '', followupCount: 0, followUps: [] });
 
     await saveInterviewState();
     await speak(cleanedResponse);
@@ -609,9 +646,14 @@ export default function InterviewRoom() {
 
     // Track in current technical question
     if (candidateAnswers.current.length > 0) {
-      const lastEntry = candidateAnswers.current[candidateAnswers.current.length - 1];
-      if (!lastEntry.followUps) lastEntry.followUps = [];
-      lastEntry.followUps.push({ q: cleanedResponse, a: '' });
+      const entries = candidateAnswers.current;
+      const lastEntry = [...entries].reverse().find(e => !e.isBreak && e.q);
+      
+      if (lastEntry) {
+        if (!lastEntry.followUps) lastEntry.followUps = [];
+        lastEntry.followUps.push({ q: cleanedResponse, a: '' });
+        lastEntry.followupCount = followUpCountForCurrentQ.current;
+      }
     }
 
     await saveInterviewState();
@@ -684,11 +726,15 @@ export default function InterviewRoom() {
 
     // Fill the answer for the last question the AI asked
     if (candidateAnswers.current.length > 0) {
-      const lastEntry = candidateAnswers.current[candidateAnswers.current.length - 1];
-      if (followUpCountForCurrentQ.current > 0 && lastEntry.followUps && lastEntry.followUps.length > 0) {
-        lastEntry.followUps[lastEntry.followUps.length - 1].a = finalAnswer;
-      } else {
-        lastEntry.a = finalAnswer;
+      const entries = candidateAnswers.current;
+      const lastEntry = [...entries].reverse().find(e => !e.isBreak && e.q);
+
+      if (lastEntry) {
+        if (followUpCountForCurrentQ.current > 0 && lastEntry.followUps && lastEntry.followUps.length > 0) {
+          lastEntry.followUps[lastEntry.followUps.length - 1].a = finalAnswer;
+        } else {
+          lastEntry.a = finalAnswer;
+        }
       }
     }
 
@@ -709,8 +755,6 @@ export default function InterviewRoom() {
       await askRepeatQuestion(currentQText, transcriptRef.current);
       return;
     }
-
-    await saveInterviewState();
 
     // ── Evaluator 1: Check key point coverage ─────────────────────
     const keyPoints = questionIndex.current >= 0 ? getKeyPointsForQuestion(questionIndex.current) : [];
@@ -756,6 +800,10 @@ export default function InterviewRoom() {
     // No key points, or Evaluator 1 said move on / max follow-ups reached → next question
     followUpsPerQuestion.current.push({ questionIndex: questionIndex.current, count: followUpCountForCurrentQ.current });
     followUpCountForCurrentQ.current = 0;
+
+    // Persist everything (including the metrics we just pushed) before moving on
+    await saveInterviewState();
+    
     await askNextQuestion(transcriptRef.current);
   };
 
@@ -929,6 +977,11 @@ export default function InterviewRoom() {
   const handleEndInterview = async () => {
     isInterviewActive.current = false;
     setSavingStatus('Finalizing your interview and saving signals...');
+    
+    // CRITICAL: Perform one last database sync to ensure the Last Question's 
+    // coverage and follow-up metrics are captured in the session_state.
+    await saveInterviewState();
+
     try { recognitionRef.current?.stop(); } catch (e) { }
 
     // 1. Stop recording and wait for final chunk
@@ -963,73 +1016,95 @@ export default function InterviewRoom() {
       total_questions: totalQuestions,
     };
 
-    // 4. Call Evaluator 2
-    let evaluationResult: any = {};
+    // 4. Trigger Background Evaluation
+    setSavingStatus('AI is evaluating your session...');
+    console.log('[CLIENT] Triggering background evaluation...');
     try {
-      setSavingStatus('AI is evaluating your session...');
-      const res = await fetch('/api/evaluate', {
+      const triggerRes = await fetch('/api/trigger-evaluate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          candidateId: candidate.id,
+          interviewId: interview.id,
           questionBank: interview.question_bank,
-          previousContext: transcriptRef.current,
+          transcript: transcriptRef.current,
           coverageData,
           followUpData,
           candidateName: candidate.name,
-          candidateEmail: candidate.email
+          tabSwitches: tabSwitchCount,
+          fullscreenExits: fullscreenExitCount,
+          candidateAnswersStructured: candidateAnswers.current
         })
       });
-      const data = await res.json();
-      if (data.evaluation) evaluationResult = data.evaluation;
-    } catch (e) {
-      sendLogToCmd('ERROR', '[Evaluator 2] Failed', { error: String(e) });
-    }
 
-    const finalEvaluation = {
-      ...evaluationResult,
-      security_violations: { tab_switches: tabSwitchCount, fullscreen_exits: fullscreenExitCount }
-    };
+      const triggerData = await triggerRes.json();
+      console.log('[CLIENT] Trigger response:', triggerData);
 
-    // 5. Save Results
-    try {
-      await supabase.from('results').insert([{
-        candidate_id: candidate.id,
-        interview_id: interview.id,
-        evaluation: finalEvaluation,
-        transcript_data: { full_transcript: candidateAnswers.current.filter((item) => item.a !== '' || item.isBreak) },
-        video_url: finalVideoUrl
-      }]);
+      // 4.1 Start Polling for Evaluation Status
+      let isDone = false;
+      let totalWait = 0;
+      const maxWait = 120; // 2 minutes max
+      
+      console.log('[CLIENT] Starting evaluation polling loop...');
+      while (!isDone && totalWait < maxWait) {
+          await new Promise(r => setTimeout(r, 4000));
+          totalWait += 4;
+          
+          const { data: cData, error: cErr } = await supabase
+              .from('candidates')
+              .select('evaluation_status, evaluation_progress, evaluation_error')
+              .eq('id', candidate.id)
+              .single();
+          
+          if (!cErr && cData) {
+              console.log(`[CLIENT] Eval Status: ${cData.evaluation_status} | Progress: ${cData.evaluation_progress}%`);
+              
+              if (cData.evaluation_error) {
+                  console.error('%c[LAMBDA ERROR DETECTED]', 'background: #fee2e2; color: #b91c1c; font-weight: bold; padding: 4px; border-radius: 4px;');
+                  console.error(cData.evaluation_error);
+              }
 
-      setSavingStatus('Finalizing your video recording...');
-      // 6. Trigger Video Stitching Pipeline on candidate side
-      try {
-        await fetch('/api/trigger-stitch', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ candidateId: candidate.id })
-        });
-      } catch (err) {
-        sendLogToCmd('ERROR', 'Failed to trigger video stitch', { error: String(err) });
+              setEvalStatus(cData.evaluation_status || 'PROCESSING');
+              setEvalProgress(cData.evaluation_progress || 0);
+              
+              if (cData.evaluation_status === 'COMPLETED') {
+                  isDone = true;
+                  console.log('[CLIENT] Evaluation COMPLETED successfully.');
+                  setSavingStatus('Evaluation successful! You can now return to the dashboard.');
+              }
+              if (cData.evaluation_status === 'FAILED') {
+                  isDone = true;
+                  console.error('[CLIENT] Evaluation FAILED.');
+                  setSavingStatus('Technical glitch during final scoring, but your interview was saved successfully.');
+              }
+          } else {
+              console.warn('[CLIENT] Polling error or empty data:', cErr);
+          }
       }
-
-      setSavingStatus('Interview completed successfully.');
-
-      // 7. Cleanup candidate record
-      await supabase.from('candidates').update({
-        session_state: {},
-        s3_uploaded_parts: []
-      }).eq('id', candidate.id);
-
-      sessionStorage.setItem('interview_done', 'true');
-      isInterviewActive.current = false;
-      streamRef.current?.getTracks().forEach(t => t.stop());
-
-      if (document.exitFullscreen) document.exitFullscreen().catch(() => { });
-      window.location.reload();
-    } catch (err) {
-      sendLogToCmd('ERROR', 'Failed to save results', { error: String(err) });
-      window.location.reload();
+    } catch (e) {
+      console.error('[CLIENT] Evaluation Trigger/Poll Error:', e);
+      sendLogToCmd('ERROR', '[Trigger Evaluate] Failed', { error: String(e) });
     }
+
+    // 5. Trigger Video Stitching
+    console.log('[CLIENT] Triggering video stitching...');
+    try {
+      await fetch('/api/trigger-stitch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ candidateId: candidate.id })
+      });
+    } catch (err) {
+      console.error('[CLIENT] Stitching Trigger Error:', err);
+      sendLogToCmd('ERROR', 'Failed to trigger video stitch', { error: String(err) });
+    }
+
+    setIsUploadComplete(true);
+    sessionStorage.setItem('interview_done', 'true');
+    isInterviewActive.current = false;
+    streamRef.current?.getTracks().forEach(t => t.stop());
+
+    if (document.exitFullscreen) document.exitFullscreen().catch(() => { });
   };
 
   return (
@@ -1058,7 +1133,6 @@ export default function InterviewRoom() {
       {showFullscreenPrompt && (
         <div
           className="fixed inset-0 z-[99999] bg-slate-900/95 backdrop-blur-md flex flex-col items-center justify-center gap-8 text-center px-8 cursor-pointer"
-          onClick={() => enterFullscreen()}
         >
           <div className="w-24 h-24 rounded-3xl bg-red-500/20 border border-red-400/30 flex items-center justify-center mb-2 animate-pulse">
             <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-red-400">
@@ -1183,12 +1257,25 @@ export default function InterviewRoom() {
                 <ShieldCheck size={48} className="text-blue-600 animate-bounce" />
               </div>
 
-              <h2 className="text-4xl font-bold mb-3 text-slate-900 tracking-tight">
-                {isUploadComplete ? 'Assessment Complete!' : 'Finalizing...'}
-              </h2>
-              <p className={`text-slate-500 text-lg mb-10 max-w-md ${!isUploadComplete ? 'animate-pulse' : ''}`}>
+              <p className={`text-slate-500 text-lg mb-1 max-w-md ${!isUploadComplete ? 'animate-pulse' : ''}`}>
                 {savingStatus}
               </p>
+
+              {/* Progress Bar */}
+              {!isUploadComplete && (
+                  <div className="w-full max-w-xs mt-6 space-y-3">
+                      <div className="flex justify-between items-center text-[11px] font-black uppercase tracking-widest text-slate-400">
+                          <span>{evalStatus || 'Initializing'}</span>
+                          <span className="text-blue-600">{evalProgress}%</span>
+                      </div>
+                      <div className="h-3 bg-slate-100 rounded-full overflow-hidden border border-slate-200 p-1">
+                          <div 
+                              className="h-full bg-blue-600 rounded-full transition-all duration-1000 shadow-[0_0_15px_rgba(37,99,235,0.4)]"
+                              style={{ width: `${evalProgress}%` }}
+                          />
+                      </div>
+                  </div>
+              )}
 
               {isUploadComplete && (
                 <button

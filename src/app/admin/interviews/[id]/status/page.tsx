@@ -17,6 +17,11 @@ interface CandidateWithStatus {
   status: CandidateStatus;
   result?: any;
   created_at?: string;
+  session_state?: any;
+  evaluation_status?: string;
+  evaluation_progress?: number;
+  eval_status?: string;
+  eval_progress?: number;
 }
 
 export default function InterviewStatusPage() {
@@ -66,10 +71,36 @@ export default function InterviewStatusPage() {
           ...candidate,
           status,
           result,
+          eval_status: candidate.evaluation_status,
+          eval_progress: candidate.evaluation_progress
         };
       });
 
       setCandidates(candidatesWithStatus);
+
+      // --- AUTO-TRIGGER LOGIC ---
+      candidatesWithStatus.forEach(async (c) => {
+          const hasResult = !!c.result;
+          const session = c.session_state || {};
+          const isFinished = session.questionIndex >= (interviewData?.question_bank?.length - 1);
+          const isEvaluating = c.eval_status === 'INITIATED' || c.eval_status === 'ANALYZING' || c.eval_status === 'CALCULATING';
+
+          if (!hasResult && isFinished && !isEvaluating) {
+              console.log(`%c[AUTO-TRIGGER] Found target candidate: ${c.name}`, 'color: #3b82f6; font-weight: bold;');
+              try {
+                  const res = await fetch('/api/trigger-evaluate', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ candidateId: c.id })
+                  });
+                  const data = await res.json();
+                  console.log(`[AUTO-TRIGGER] Response for ${c.name}:`, data);
+              } catch (e) {
+                  console.error(`[AUTO-TRIGGER] FAILED for ${c.name}:`, e);
+              }
+          }
+      });
+
     } catch (error) {
       console.error('Error fetching status:', error);
     } finally {
@@ -80,6 +111,9 @@ export default function InterviewStatusPage() {
 
   useEffect(() => {
     fetchStatus();
+    // Auto-refresh every 10 seconds to show progress
+    const interval = setInterval(fetchStatus, 10000);
+    return () => clearInterval(interval);
   }, [interviewId]);
 
   const handleRefresh = () => {
@@ -262,6 +296,7 @@ export default function InterviewStatusPage() {
                   <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Candidate Detail</th>
                   <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Access Passkey</th>
                   <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Evaluation</th>
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">AI Progress</th>
                   <th className="px-8 py-5 text-right"></th>
                 </tr>
               </thead>
@@ -315,6 +350,26 @@ export default function InterviewStatusPage() {
                       ) : (
                         <span className="text-slate-400 font-medium text-xs tracking-tight italic">No result yet</span>
                       )}
+                    </td>
+                    <td className="px-8 py-5">
+                        {(!candidate.result && (candidate.eval_status && candidate.eval_status !== 'COMPLETED')) ? (
+                            <div className="w-32 space-y-2">
+                                <div className="flex justify-between text-[9px] font-black uppercase text-slate-400">
+                                    <span>{candidate.eval_status}</span>
+                                    <span>{candidate.eval_progress}%</span>
+                                </div>
+                                <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
+                                    <div 
+                                        className="h-full bg-blue-500 transition-all duration-1000"
+                                        style={{ width: `${candidate.eval_progress}%` }}
+                                    />
+                                </div>
+                            </div>
+                        ) : (
+                            <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                                {candidate.result ? 'ANALYSIS READY' : '-'}
+                            </span>
+                        )}
                     </td>
                     <td className="px-8 py-5 text-right">
                       {candidate.status === 'completed' && candidate.result?.id && (
