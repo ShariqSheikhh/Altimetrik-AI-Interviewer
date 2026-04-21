@@ -179,17 +179,6 @@ export default function SendEmailPage() {
                   placeholder="Altimetrik Assessments"
                 />
               </div>
-
-              <div className="space-y-2">
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Sender Email (optional)</label>
-                <input
-                  type="email"
-                  value={fromEmail}
-                  onChange={(e) => setFromEmail(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-slate-900 font-bold focus:outline-none focus:border-blue-500 transition-all"
-                  placeholder="defaults to SMTP_FROM_EMAIL or SMTP_USER"
-                />
-              </div>
             </div>
           </section>
 
