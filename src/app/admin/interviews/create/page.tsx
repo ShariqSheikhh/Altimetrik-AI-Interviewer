@@ -21,6 +21,33 @@ type CandidateUploadRow = {
   scoreError?: string;
 };
 
+function extractDriveFileId(urlValue: string): string | null {
+  try {
+    const parsed = new URL(urlValue.trim());
+    const host = parsed.hostname.toLowerCase();
+    if (!host.includes('drive.google.com')) return null;
+
+    const fromQuery = parsed.searchParams.get('id');
+    if (fromQuery) return fromQuery;
+
+    const pathParts = parsed.pathname.split('/').filter(Boolean);
+    const fileIndex = pathParts.findIndex((part) => part === 'd');
+    if (fileIndex >= 0 && pathParts[fileIndex + 1]) {
+      return pathParts[fileIndex + 1];
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function getResumePreviewUrl(resumeDriveLink: string): string {
+  const fileId = extractDriveFileId(resumeDriveLink);
+  if (!fileId) return resumeDriveLink;
+  return `https://drive.google.com/file/d/${fileId}/preview`;
+}
+
 export default function CreateTest() {
   const router = useRouter();
   const [title, setTitle] = useState('');
@@ -36,6 +63,21 @@ export default function CreateTest() {
   const [showJdPreview, setShowJdPreview] = useState(false);
   const [jdPreviewText, setJdPreviewText] = useState('');
   const [jdPreviewHtml, setJdPreviewHtml] = useState('');
+  const sortedCandidateRows = candidates
+    .map((candidate, originalIndex) => ({ candidate, originalIndex }))
+    .sort((a, b) => {
+      const aDone = a.candidate.scoreStatus === 'done';
+      const bDone = b.candidate.scoreStatus === 'done';
+
+      if (aDone && bDone) {
+        return (b.candidate.score ?? 0) - (a.candidate.score ?? 0);
+      }
+
+      if (aDone) return -1;
+      if (bDone) return 1;
+
+      return a.originalIndex - b.originalIndex;
+    });
 
   const selectedCount = candidates.filter((c) => c.selected).length;
 
@@ -711,13 +753,13 @@ export default function CreateTest() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50 bg-white">
-                    {candidates.map((c, i) => (
-                      <tr key={i} className="hover:bg-slate-50/50 transition-colors">
+                    {sortedCandidateRows.map(({ candidate: c, originalIndex }) => (
+                      <tr key={`${c.email}-${originalIndex}`} className="hover:bg-slate-50/50 transition-colors">
                         <td className="px-4 py-4 text-center">
                           <input
                             type="checkbox"
                             checked={!!c.selected}
-                            onChange={() => toggleCandidateSelection(i)}
+                            onChange={() => toggleCandidateSelection(originalIndex)}
                             className="w-4 h-4 rounded border-slate-300"
                           />
                         </td>
@@ -725,9 +767,13 @@ export default function CreateTest() {
                         <td className="px-6 py-4 text-slate-500 font-medium">{c.email}</td>
                         <td className="px-6 py-4">
                           {c.resumeDriveLink ? (
-                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-emerald-50 text-emerald-700 border border-emerald-100">
-                              Present
-                            </span>
+                            <button
+                              type="button"
+                              onClick={() => window.open(getResumePreviewUrl(c.resumeDriveLink || ''), '_blank', 'noopener,noreferrer')}
+                              className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-emerald-50 text-emerald-700 border border-emerald-100 hover:bg-emerald-100 hover:border-emerald-200 transition-colors"
+                            >
+                              View Resume
+                            </button>
                           ) : (
                             <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-slate-100 text-slate-500 border border-slate-200">
                               Missing
