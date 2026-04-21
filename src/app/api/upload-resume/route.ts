@@ -73,10 +73,16 @@ async function uploadDriveResume(params: {
 }): Promise<{ key: string; fileName: string }> {
     const { driveUrl, interviewId, candidateId, candidateName } = params;
     const downloadUrl = getDownloadUrl(driveUrl);
-    const response = await fetch(downloadUrl);
+    let response: Response;
+
+    try {
+        response = await fetch(downloadUrl);
+    } catch (err: any) {
+        throw new Error(`download_failed: ${err.message || 'Unable to fetch resume from drive link'}`);
+    }
 
     if (!response.ok) {
-        throw new Error(`Failed to download resume link (${response.status})`);
+        throw new Error(`download_failed: Failed to download resume link (${response.status})`);
     }
 
     const arrayBuffer = await response.arrayBuffer();
@@ -93,17 +99,21 @@ async function uploadDriveResume(params: {
     const safeCandidateName = sanitizeFileName((candidateName || 'candidate').trim()) || 'candidate';
     const key = `resumes/${interviewId}/${safeCandidateName}_${candidateId}/admin/${Date.now()}_${fileName}`;
 
-    await s3Client.send(
-        new PutObjectCommand({
-            Bucket:
-                process.env.NEXT_PUBLIC_AWS_S3_BUCKET_NAME ||
-                process.env.AWS_S3_BUCKET_NAME ||
-                process.env.S3_BUCKET_NAME,
-            Key: key,
-            Body: Buffer.from(arrayBuffer),
-            ContentType: response.headers.get('content-type') || 'application/pdf',
-        }),
-    );
+    try {
+        await s3Client.send(
+            new PutObjectCommand({
+                Bucket:
+                    process.env.NEXT_PUBLIC_AWS_S3_BUCKET_NAME ||
+                    process.env.AWS_S3_BUCKET_NAME ||
+                    process.env.S3_BUCKET_NAME,
+                Key: key,
+                Body: Buffer.from(arrayBuffer),
+                ContentType: response.headers.get('content-type') || 'application/pdf',
+            }),
+        );
+    } catch (err: any) {
+        throw new Error(`s3_upload_failed: ${err.message || 'Unable to upload resume to S3'}`);
+    }
 
     return { key, fileName };
 }
@@ -146,7 +156,7 @@ export async function POST(req: NextRequest) {
                 .eq('id', candidateId);
 
             if (updateErr) {
-                return NextResponse.json({ error: updateErr.message }, { status: 500 });
+                return NextResponse.json({ error: `supabase_update_failed: ${updateErr.message}` }, { status: 500 });
             }
 
             return NextResponse.json({ success: true, resumeKey: key, fileName });
