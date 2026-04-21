@@ -110,8 +110,8 @@ export async function POST(req: NextRequest) {
             coverageData: { per_question: dbSession.coveragePerQuestion || [] },
             followUpData: { per_question: dbSession.followUpsPerQuestion || [] },
             candidateAnswersStructured: dbSession.candidateAnswers || [],
-            tabSwitches: dbSession.tabSwitches || 0,
-            fullscreenExits: dbSession.fullscreenExits || 0,
+            tabSwitches: tabSwitches ?? dbSession.tabSwitches ?? 0,
+            fullscreenExits: fullscreenExits ?? dbSession.fullscreenExits ?? 0,
             sessionState: dbSession 
         };
 

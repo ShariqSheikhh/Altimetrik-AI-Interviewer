@@ -81,10 +81,22 @@ export default function InterviewRoom() {
 
   const enterFullscreen = () => {
     const el = document.documentElement;
-    if (el.requestFullscreen) el.requestFullscreen();
-    else if ((el as any).webkitRequestFullscreen) (el as any).webkitRequestFullscreen();
-    else if ((el as any).mozRequestFullScreen) (el as any).mozRequestFullScreen();
-    else if ((el as any).msRequestFullscreen) (el as any).msRequestFullscreen();
+    const isFs =
+      !!document.fullscreenElement ||
+      !!(document as any).webkitFullscreenElement ||
+      !!(document as any).mozFullScreenElement ||
+      !!(document as any).msFullscreenElement;
+
+    if (isFs) return; // Already in fullscreen
+
+    try {
+      if (el.requestFullscreen) el.requestFullscreen().catch(() => { });
+      else if ((el as any).webkitRequestFullscreen) (el as any).webkitRequestFullscreen().catch(() => { });
+      else if ((el as any).mozRequestFullScreen) (el as any).mozRequestFullScreen().catch(() => { });
+      else if ((el as any).msRequestFullscreen) (el as any).msRequestFullscreen().catch(() => { });
+    } catch (e) {
+      // Catch synchronous errors just in case
+    }
   };
 
   const showSecurityWarning = (msg: string) => {
@@ -105,7 +117,13 @@ export default function InterviewRoom() {
       if (isInterviewActive.current) {
         if (!isFs) {
           // Candidate exited fullscreen, count the violation
-          setFullscreenExitCount(prev => prev + 1);
+          setFullscreenExitCount(prev => {
+            const next = prev + 1;
+            sendLogToCmd('WARN', `Fullscreen Exit Detected (Total: ${next})`);
+            // Immediate persistence
+            saveInterviewState(next, undefined);
+            return next;
+          });
           // ⚠️ Cannot call requestFullscreen() here — browsers require a direct
           // user gesture (click). Show a blocking overlay instead; the button
           // inside it will call enterFullscreen() as a valid user gesture.
@@ -113,6 +131,7 @@ export default function InterviewRoom() {
         } else {
           // Fullscreen restored (e.g. candidate clicked the button)
           setShowFullscreenPrompt(false);
+          sendLogToCmd('INFO', 'Fullscreen Restored');
         }
       }
     };
@@ -184,7 +203,13 @@ export default function InterviewRoom() {
     const handleVisibilityChange = () => {
       if (document.hidden && isInterviewActive.current) {
         // Increment violation counter and show a temporary amber toast
-        setTabSwitchCount(prev => prev + 1);
+        setTabSwitchCount(prev => {
+          const next = prev + 1;
+          sendLogToCmd('WARN', `Tab Switch Detected (Total: ${next})`);
+          // Immediate persistence
+          saveInterviewState(undefined, next);
+          return next;
+        });
         setShowTabWarning(true);
         setTimeout(() => setShowTabWarning(false), 4000);
       }
@@ -251,6 +276,10 @@ export default function InterviewRoom() {
 
         // NEW: Load Session Count on Resume (don't increment yet)
         sessionCountRef.current = state.sessionCount || 1;
+
+        // RESTORE Security Violation Counters
+        if (state.tabSwitches !== undefined) setTabSwitchCount(state.tabSwitches);
+        if (state.fullscreenExits !== undefined) setFullscreenExitCount(state.fullscreenExits);
 
         // Reset segment index for the new session
         segmentIndexRef.current = 1;
@@ -461,7 +490,8 @@ export default function InterviewRoom() {
   };
 
   // ── State Persistence Logic ──
-  const saveInterviewState = async () => {
+  // allow optional overrides for security counters since setXState is async
+  const saveInterviewState = async (fsOverride?: number, tsOverride?: number) => {
     const cid = localStorage.getItem('candidate_id');
     if (!cid) return;
 
@@ -475,6 +505,9 @@ export default function InterviewRoom() {
       followUpsPerQuestion: followUpsPerQuestion.current,
       segmentIndex: segmentIndexRef.current,
       sessionCount: sessionCountRef.current,
+      // Persistence for security violations
+      fullscreenExits: fsOverride !== undefined ? fsOverride : fullscreenExitCount,
+      tabSwitches: tsOverride !== undefined ? tsOverride : tabSwitchCount,
     };
 
     try {
@@ -1100,7 +1133,6 @@ export default function InterviewRoom() {
       {showFullscreenPrompt && (
         <div
           className="fixed inset-0 z-[99999] bg-slate-900/95 backdrop-blur-md flex flex-col items-center justify-center gap-8 text-center px-8 cursor-pointer"
-          onClick={() => enterFullscreen()}
         >
           <div className="w-24 h-24 rounded-3xl bg-red-500/20 border border-red-400/30 flex items-center justify-center mb-2 animate-pulse">
             <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-red-400">
