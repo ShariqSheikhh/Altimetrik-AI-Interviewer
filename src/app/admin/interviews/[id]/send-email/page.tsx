@@ -104,20 +104,32 @@ export default function SendEmailPage() {
           })),
           subject,
           htmlContent,
+          fromEmail,
           fromName,
         }),
       });
 
       const data = await response.json();
 
-      if (!data.success) {
+      if (!response.ok) {
         throw new Error(data.error || 'Failed to send invites');
+      }
+
+      if (data.sent === 0) {
+        const firstFailure = Array.isArray(data.results)
+          ? data.results.find((r: any) => !r.success)?.error
+          : '';
+        throw new Error(firstFailure || data.error || 'No emails were delivered');
       }
 
       sessionStorage.setItem('emailProgress', JSON.stringify(data));
       sessionStorage.setItem('emailSentCount', data.sent.toString());
       sessionStorage.setItem('emailFailedCount', data.failed.toString());
       sessionStorage.setItem('emailTotal', data.total.toString());
+
+      if (data.failed > 0) {
+        alert(`Partial delivery: ${data.sent} sent, ${data.failed} failed. Check the progress page for details.`);
+      }
 
       router.push(`/admin/interviews/${interviewId}/email-progress`);
     } catch (err: any) {
@@ -165,6 +177,17 @@ export default function SendEmailPage() {
                   onChange={(e) => setFromName(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-slate-900 font-bold focus:outline-none focus:border-blue-500 transition-all"
                   placeholder="Altimetrik Assessments"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Sender Email (optional)</label>
+                <input
+                  type="email"
+                  value={fromEmail}
+                  onChange={(e) => setFromEmail(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-slate-900 font-bold focus:outline-none focus:border-blue-500 transition-all"
+                  placeholder="defaults to SMTP_FROM_EMAIL or SMTP_USER"
                 />
               </div>
             </div>

@@ -199,31 +199,47 @@ async function fetchJdTextFromS3(jdS3Key: string): Promise<string> {
 function buildPrompt(params: { candidateName: string; resumeText: string; jdText: string }) {
   const { candidateName, resumeText, jdText } = params;
   return `
-You are an AI recruitment screening assistant for a company's interview shortlisting workflow.
-Evaluate how well the candidate resume matches the Job Description for interview eligibility.
-
-Scoring guidance (0-100 total):
-- 35 points: Core skills and tools match
-- 30 points: Must-have JD requirements coverage
-- 20 points: Relevant project/experience alignment
-- 15 points: Role readiness and profile quality
-
-Return only valid JSON in this exact schema:
+You are an AI recruitment screening assistant for a company's interview shortlisting workflow. Evaluate how well the candidate resume matches the Job Description for interview eligibility.
+ 
+Step 1 — Silent analysis (do not output this):
+Extract required skills/tools from JD. For each, check if the resume shows: exact match, equivalent tool, or no evidence. Note years of experience required vs. actual. Flag any mandatory requirements the candidate clearly lacks.
+ 
+Step 2 — Score using these dimensions (0–100 total):
+ 
+[35pts] Core skills & tools: Exact match = full credit | Equivalent tool = 70% | Mentioned only = 30%
+ 
+[30pts] Must-have JD requirements: Deduct proportionally for each unmet hard requirement. Award very small points we candidate aligns with good-to-have skills/experiences
+ 
+[20pts] Project/experience alignment: Domain relevance of past roles/education/academic projects; weight last 3 years more heavily.
+ 
+[15pts] Role readiness: Experience years vs. JD ask; career trajectory toward this role.
+ 
+Hard rule: If any explicitly mandatory JD requirement (required skills) is missing from the resume, cap score at 55.
+ 
+Calibration: Be conservative. 75+ = confident shortlist. Treat missing context as missing skill.
+ 
+Label mapping:
+  80–100 → "Strong Fit"
+  60–79  → "Moderate Fit"
+  40–59  → "Needs Review"
+  0–39   → "Low Fit"
+ 
+Return ONLY valid JSON in this exact schema:
 {
-  "score": <number 0-100>,
+  "score": <number 0–100>,
   "label": "Strong Fit" | "Moderate Fit" | "Needs Review" | "Low Fit",
-  "summary": "<max 2 lines concise recruiter summary>",
-  "strengths": ["<short bullet>", "<short bullet>", "<short bullet>"],
-  "gaps": ["<short bullet>", "<short bullet>", "<short bullet>"]
+  "summary": "<2 sentence recruiter-facing summary>",
+  "strengths": ["<specific JD-matched resume fact>", ...],  // exactly 3
+  "gaps": ["<specific missing JD requirement>", ...]        // up to 3
 }
-
+ 
 Candidate Name: ${candidateName}
-
+ 
 Job Description:
 ${jdText.slice(0, MAX_TEXT_CHARS)}
-
+ 
 Resume:
-${resumeText.slice(0, MAX_TEXT_CHARS)}
+${resumeText.slice(0, MAX_TEXT_CHARS)}}
 `;
 }
 
