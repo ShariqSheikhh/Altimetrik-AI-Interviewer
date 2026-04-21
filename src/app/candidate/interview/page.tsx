@@ -51,7 +51,7 @@ export default function InterviewRoom() {
   const isListeningRef = useRef(false); // ref mirror of isListening — safe to read in closures
 
   const questionIndex = useRef(-1);
-  const candidateAnswers = useRef<{ q?: string, a?: string, followUp?: string, followUpAnswer?: string, followUps?: { q: string, a: string }[], isBreak?: boolean, sessionNo?: number, timestamp?: string, speaker?: string, text?: string }[]>([]);
+  const candidateAnswers = useRef<{ q?: string, a?: string, followupCount?: number, followUp?: string, followUpAnswer?: string, followUps?: { q: string, a: string }[], isBreak?: boolean, sessionNo?: number, timestamp?: string, speaker?: string, text?: string }[]>([]);
   const finalizedTextRef = useRef('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const selectedVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
@@ -247,6 +247,7 @@ export default function InterviewRoom() {
         if (state.coveragePerQuestion) coveragePerQuestion.current = state.coveragePerQuestion;
         if (state.questionsWithFollowUps) questionsWithFollowUps.current = state.questionsWithFollowUps;
         if (state.followUpCountForCurrentQ) followUpCountForCurrentQ.current = state.followUpCountForCurrentQ;
+        if (state.followUpsPerQuestion) followUpsPerQuestion.current = state.followUpsPerQuestion;
 
         // NEW: Load Session Count on Resume (don't increment yet)
         sessionCountRef.current = state.sessionCount || 1;
@@ -471,6 +472,7 @@ export default function InterviewRoom() {
       coveragePerQuestion: coveragePerQuestion.current,
       questionsWithFollowUps: questionsWithFollowUps.current,
       followUpCountForCurrentQ: followUpCountForCurrentQ.current,
+      followUpsPerQuestion: followUpsPerQuestion.current,
       segmentIndex: segmentIndexRef.current,
       sessionCount: sessionCountRef.current,
     };
@@ -588,7 +590,7 @@ export default function InterviewRoom() {
     // Track the question
     lastQuestionText.current = cleanedResponse;
     followUpCountForCurrentQ.current = 0;  // reset follow-up counter for new question
-    candidateAnswers.current.push({ q: cleanedResponse, a: '', followUps: [] });
+    candidateAnswers.current.push({ q: cleanedResponse, a: '', followupCount: 0, followUps: [] });
 
     await saveInterviewState();
     await speak(cleanedResponse);
@@ -611,9 +613,14 @@ export default function InterviewRoom() {
 
     // Track in current technical question
     if (candidateAnswers.current.length > 0) {
-      const lastEntry = candidateAnswers.current[candidateAnswers.current.length - 1];
-      if (!lastEntry.followUps) lastEntry.followUps = [];
-      lastEntry.followUps.push({ q: cleanedResponse, a: '' });
+      const entries = candidateAnswers.current;
+      const lastEntry = [...entries].reverse().find(e => !e.isBreak && e.q);
+      
+      if (lastEntry) {
+        if (!lastEntry.followUps) lastEntry.followUps = [];
+        lastEntry.followUps.push({ q: cleanedResponse, a: '' });
+        lastEntry.followupCount = followUpCountForCurrentQ.current;
+      }
     }
 
     await saveInterviewState();
@@ -686,11 +693,15 @@ export default function InterviewRoom() {
 
     // Fill the answer for the last question the AI asked
     if (candidateAnswers.current.length > 0) {
-      const lastEntry = candidateAnswers.current[candidateAnswers.current.length - 1];
-      if (followUpCountForCurrentQ.current > 0 && lastEntry.followUps && lastEntry.followUps.length > 0) {
-        lastEntry.followUps[lastEntry.followUps.length - 1].a = finalAnswer;
-      } else {
-        lastEntry.a = finalAnswer;
+      const entries = candidateAnswers.current;
+      const lastEntry = [...entries].reverse().find(e => !e.isBreak && e.q);
+
+      if (lastEntry) {
+        if (followUpCountForCurrentQ.current > 0 && lastEntry.followUps && lastEntry.followUps.length > 0) {
+          lastEntry.followUps[lastEntry.followUps.length - 1].a = finalAnswer;
+        } else {
+          lastEntry.a = finalAnswer;
+        }
       }
     }
 
